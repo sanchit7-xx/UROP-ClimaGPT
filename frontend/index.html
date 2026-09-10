@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClimaGPT — AI Weather & Farm Risk Intelligence Platform</title>
+    <meta name="description" content="Empowering farmers with smart digital onboarding, precision crop tracking, and AI-driven risk modeling.">
+    <!-- Google Fonts: Outfit & Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome for sleek icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Leaflet CSS for Map integration -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <!-- App Styles -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <!-- Dynamic Background Elements -->
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+    <div class="bg-pattern"></div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Global Navigation Header -->
+    <header class="app-header">
+        <div class="header-container">
+            <div class="brand" id="brand-logo" style="cursor: pointer;">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-seedling"></i>
+                </div>
+                <div class="brand-text">
+                    <span class="brand-name">Clima<span class="highlight">GPT</span></span>
+                    <span class="brand-tag">Farmer Support System</span>
+                </div>
+            </div>
+
+            <nav class="nav-links">
+                <a href="#" class="nav-link active" data-view="landing" id="nav-home">Home</a>
+                <a href="#" class="nav-link auth-required hidden" data-view="dashboard" id="nav-dashboard">Dashboard</a>
+            </nav>
+
+            <div class="header-actions">
+                <div id="guest-actions" class="btn-group">
+                    <button class="btn btn-outline" id="btn-login-header">Sign In</button>
+                    <button class="btn btn-primary" id="btn-register-header">Get Started</button>
+                </div>
+                <div id="user-actions" class="user-profile-badge hidden">
+                    <div class="avatar" id="header-avatar"><i class="fa-solid fa-user-gear"></i></div>
+                    <span class="user-name" id="header-user-name">Farmer</span>
+                    <button class="btn-icon" id="btn-logout" title="Sign Out">
+                        <i class="fa-solid fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN SPA VIEWS CONTAINER -->
+    <main class="main-content">
+
+        <!-- ========================================== -->
+        <!-- VIEW 1: LANDING HERO PAGE                  -->
+        <!-- ========================================== -->
+        <section id="view-landing" class="view-section active">
+            <div class="hero-container">
+                <div class="hero-badge">
+                    <i class="fa-solid fa-shield-halved"></i> Stage 1: Farmer Onboarding & Digital Twin
+                </div>
+                <h1 class="hero-title">
+                    Empowering Agriculture with <br>
+                    <span class="text-gradient">Precision Digital Profiles</span>
+                </h1>
+                <p class="hero-description">
+                    ClimaGPT provides farmers with an advanced digital registration system to track land coordinates, 
+                    irrigation setups, and dynamic crop growth stages. Built for climate resilience and maximum yield.
+                </p>
+
+                <div class="hero-cta">
+                    <button class="btn btn-primary btn-lg glow-effect" id="hero-btn-start">
+                        <i class="fa-solid fa-wheat-awn"></i> Start Farmer Onboarding
+                    </button>
+                    <button class="btn btn-secondary btn-lg" id="hero-btn-login">
+                        <i class="fa-solid fa-right-to-bracket"></i> Existing Account
+                    </button>
+                </div>
+
+                <!-- Feature Grid Cards -->
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon"><i class="fa-solid fa-map-location-dot"></i></div>
+                        <h3>GPS Farm Boundaries</h3>
+                        <p>High-precision lat/long coordinates mapping for weather grid pinpointing.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon"><i class="fa-solid fa-droplet"></i></div>
+                        <h3>Water & Irrigation</h3>
+                        <p>Track rain-fed, drip, sprinkler, or borewell infrastructure capability.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon"><i class="fa-solid fa-chart-line"></i></div>
+                        <h3>Dynamic Crop Stages</h3>
+                        <p>Track sowing dates, expected harvest, and growth progression seamlessly.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- ========================================== -->
+        <!-- VIEW 2: AUTHENTICATION (LOGIN / REGISTER)  -->
+        <!-- ========================================== -->
+        <section id="view-auth" class="view-section hidden">
+            <div class="auth-card glass-panel">
+                <div class="auth-tabs">
+                    <button class="auth-tab active" id="tab-login">Sign In</button>
+                    <button class="auth-tab" id="tab-register">Quick Register</button>
+                </div>
+
+                <!-- LOGIN FORM -->
+                <form id="form-login" class="auth-form active">
+                    <h2>Welcome Back</h2>
+                    <p class="auth-sub">Access your registered farms and crop records</p>
+                    
+                    <div class="form-group">
+                        <label for="login-email"><i class="fa-solid fa-envelope"></i> Email Address</label>
+                        <input type="email" id="login-email" class="form-input" placeholder="e.g. farmer@climagpt.org" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="login-password"><i class="fa-solid fa-lock"></i> Password</label>
+                        <input type="password" id="login-password" class="form-input" placeholder="••••••••" required>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-block">
+                        <i class="fa-solid fa-arrow-right-to-bracket"></i> Sign In to Dashboard
+                    </button>
+                </form>
+
+                <!-- QUICK REGISTER FORM -->
+                <form id="form-register" class="auth-form hidden">
+                    <h2>Create Account</h2>
+                    <p class="auth-sub">Start your digital farm setup in under 2 minutes</p>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="reg-name"><i class="fa-solid fa-user"></i> Full Name</label>
+                            <input type="text" id="reg-name" class="form-input" placeholder="Ramesh Patel" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="reg-phone"><i class="fa-solid fa-phone"></i> Phone Number</label>
+                            <input type="tel" id="reg-phone" class="form-input" placeholder="+91 9876543210" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="reg-email"><i class="fa-solid fa-envelope"></i> Email Address</label>
+                        <input type="email" id="reg-email" class="form-input" placeholder="farmer@example.com" required>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="reg-password"><i class="fa-solid fa-lock"></i> Password</label>
+                            <input type="password" id="reg-password" class="form-input" placeholder="Min 8 characters" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="reg-confirm-password"><i class="fa-solid fa-shield"></i> Confirm Password</label>
+                            <input type="password" id="reg-confirm-password" class="form-input" placeholder="Repeat password" required>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-block">
+                        Proceed to Onboarding <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                </form>
+            </div>
+        </section>
+
+
+        <!-- ========================================== -->
+        <!-- VIEW 3: 6-STEP FARMER ONBOARDING WIZARD    -->
+        <!-- ========================================== -->
+        <section id="view-onboarding" class="view-section hidden">
+            <div class="wizard-container">
+                <!-- Stepper Progress Header -->
+                <div class="wizard-header">
+                    <h2>Farmer Onboarding & Registration</h2>
+                    <p class="wizard-subtitle">Step <span id="current-step-num">1</span> of 6</p>
+                    
+                    <div class="stepper-bar">
+                        <div class="stepper-progress" id="stepper-progress" style="width: 16.66%;"></div>
+                        <div class="step-nodes">
+                            <div class="step-node active" data-step="1"><span>1</span><label>Account</label></div>
+                            <div class="step-node" data-step="2"><span>2</span><label>Location</label></div>
+                            <div class="step-node" data-step="3"><span>3</span><label>Farm Profile</label></div>
+                            <div class="step-node" data-step="4"><span>4</span><label>Geo & Water</label></div>
+                            <div class="step-node" data-step="5"><span>5</span><label>Crop Setup</label></div>
+                            <div class="step-node" data-step="6"><span>6</span><label>Review</label></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Wizard Body / Card -->
+                <div class="wizard-card glass-panel">
+
+                    <!-- STEP 1: ACCOUNT & PERSONAL INFO -->
+                    <div class="wizard-step active" id="step-1">
+                        <div class="step-title">
+                            <i class="fa-solid fa-id-card"></i>
+                            <h3>Personal Information & Account Credentials</h3>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="ob-name">Full Name *</label>
+                                <input type="text" id="ob-name" class="form-input" placeholder="e.g. Ramesh Kumar Patel" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-phone">Phone Number *</label>
+                                <input type="tel" id="ob-phone" class="form-input" placeholder="+91 9876543210" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-email">Email Address *</label>
+                                <input type="email" id="ob-email" class="form-input" placeholder="ramesh@example.com" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-pass">Password *</label>
+                                <input type="password" id="ob-pass" class="form-input" placeholder="At least 8 chars" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-conf-pass">Confirm Password *</label>
+                                <input type="password" id="ob-conf-pass" class="form-input" placeholder="Repeat password" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-lang">Preferred Language</label>
+                                <select id="ob-lang" class="form-input">
+                                    <option value="English" selected>English</option>
+                                    <option value="Hindi">Hindi (हिंदी)</option>
+                                    <option value="Gujarati">Gujarati (ગુજરાતી)</option>
+                                    <option value="Marathi">Marathi (मराठी)</option>
+                                    <option value="Punjabi">Punjabi (ਪੰਜਾਬੀ)</option>
+                                    <option value="Telugu">Telugu (తెలుగు)</option>
+                                    <option value="Tamil">Tamil (தமிழ்)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-age">Age (Optional)</label>
+                                <input type="number" id="ob-age" class="form-input" placeholder="e.g. 42" min="18" max="100">
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-gender">Gender (Optional)</label>
+                                <select id="ob-gender" class="form-input">
+                                    <option value="">Select Gender</option>
+                                    <option value="M">Male</option>
+                                    <option value="F">Female</option>
+                                    <option value="O">Other</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- STEP 2: LOCATION & ADDRESS DETAILS -->
+                    <div class="wizard-step hidden" id="step-2">
+                        <div class="step-title">
+                            <i class="fa-solid fa-location-dot"></i>
+                            <h3>Regional & Administrative Location</h3>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="ob-state">State / Region *</label>
+                                <input type="text" id="ob-state" class="form-input" placeholder="e.g. Gujarat" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-district">District *</label>
+                                <input type="text" id="ob-district" class="form-input" placeholder="e.g. Anand" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-village">Village / Locality *</label>
+                                <input type="text" id="ob-village" class="form-input" placeholder="e.g. Mogri" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-postal">Postal Code (Optional)</label>
+                                <input type="text" id="ob-postal" class="form-input" placeholder="e.g. 388345">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- STEP 3: FARM PROFILE -->
+                    <div class="wizard-step hidden" id="step-3">
+                        <div class="step-title">
+                            <i class="fa-solid fa-tractor"></i>
+                            <h3>Farm General Profile</h3>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="ob-farm-name">Farm Name *</label>
+                                <input type="text" id="ob-farm-name" class="form-input" placeholder="e.g. Green Valley Plot 1" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-farm-area">Total Farm Area *</label>
+                                <input type="number" id="ob-farm-area" class="form-input" step="0.01" min="0.1" placeholder="e.g. 5.5" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-area-unit">Area Unit *</label>
+                                <select id="ob-area-unit" class="form-input" required>
+                                    <option value="acre" selected>Acre</option>
+                                    <option value="ha">Hectare</option>
+                                    <option value="guntha">Guntha</option>
+                                    <option value="bigha">Bigha</option>
+                                    <option value="sqm">Square Meter</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-irrigation">Primary Irrigation Method *</label>
+                                <select id="ob-irrigation" class="form-input" required>
+                                    <option value="drip" selected>Drip Irrigation</option>
+                                    <option value="sprinkler">Sprinkler</option>
+                                    <option value="borewell">Borewell / Groundwater</option>
+                                    <option value="canal">Canal System</option>
+                                    <option value="rain_fed">Rain-fed Only</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- STEP 4: GEO-LOCATION & MAP PINNING -->
+                    <div class="wizard-step hidden" id="step-4">
+                        <div class="step-title">
+                            <i class="fa-solid fa-map-pin"></i>
+                            <h3>Precise GPS Geo-Coordinates</h3>
+                        </div>
+                        <p class="step-desc">
+                            Select farm center on the map or click <strong>Use My Location</strong> to auto-fill latitude and longitude for pinpoint weather precision.
+                        </p>
+
+                        <div class="geo-controls">
+                            <button type="button" class="btn btn-secondary btn-sm" id="btn-use-gps">
+                                <i class="fa-solid fa-crosshairs"></i> Use Current GPS Location
+                            </button>
+                        </div>
+
+                        <div class="form-row" style="margin-top: 15px;">
+                            <div class="form-group">
+                                <label for="ob-lat">Latitude * (-90 to 90)</label>
+                                <input type="number" id="ob-lat" class="form-input" step="0.000001" placeholder="22.5726" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-lng">Longitude * (-180 to 180)</label>
+                                <input type="number" id="ob-lng" class="form-input" step="0.000001" placeholder="88.3639" required>
+                            </div>
+                        </div>
+
+                        <!-- Leaflet Interactive Map Container -->
+                        <div id="map-container" class="leaflet-map-wrapper"></div>
+                    </div>
+
+                    <!-- STEP 5: INITIAL CROP SETUP -->
+                    <div class="wizard-step hidden" id="step-5">
+                        <div class="step-title">
+                            <i class="fa-solid fa-seedling"></i>
+                            <h3>Active Crop Profile Setup</h3>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="ob-crop-name">Crop Name *</label>
+                                <input type="text" id="ob-crop-name" class="form-input" placeholder="e.g. Wheat, Rice, Cotton" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-crop-variety">Crop Variety (Optional)</label>
+                                <input type="text" id="ob-crop-variety" class="form-input" placeholder="e.g. Sharbati / HD 2967">
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-sowing-date">Sowing / Planting Date *</label>
+                                <input type="date" id="ob-sowing-date" class="form-input" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-harvest-date">Expected Harvest Date (Optional)</label>
+                                <input type="date" id="ob-harvest-date" class="form-input">
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-growth-stage">Current Growth Stage</label>
+                                <select id="ob-growth-stage" class="form-input">
+                                    <option value="">Select Stage (Loaded from API)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="ob-soil-type">Soil Type (Optional)</label>
+                                <select id="ob-soil-type" class="form-input">
+                                    <option value="">Select Soil Type</option>
+                                    <option value="Loam">Loam</option>
+                                    <option value="Clay">Clay</option>
+                                    <option value="Sandy">Sandy</option>
+                                    <option value="Black Soil">Black Soil (Regur)</option>
+                                    <option value="Red Soil">Red Soil</option>
+                                    <option value="Alluvial">Alluvial</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- STEP 6: SUMMARY & SUBMIT -->
+                    <div class="wizard-step hidden" id="step-6">
+                        <div class="step-title">
+                            <i class="fa-solid fa-clipboard-check"></i>
+                            <h3>Review & Finish Onboarding</h3>
+                        </div>
+                        <p class="step-desc">Please verify your details before registering your profile and farm on ClimaGPT.</p>
+
+                        <div class="summary-cards">
+                            <div class="summary-card">
+                                <h4><i class="fa-solid fa-user"></i> Farmer Profile</h4>
+                                <div id="summary-profile-content" class="summary-list"></div>
+                            </div>
+                            <div class="summary-card">
+                                <h4><i class="fa-solid fa-wheat-field"></i> Farm & GPS Location</h4>
+                                <div id="summary-farm-content" class="summary-list"></div>
+                            </div>
+                            <div class="summary-card">
+                                <h4><i class="fa-solid fa-plant-wilt"></i> Initial Crop Profile</h4>
+                                <div id="summary-crop-content" class="summary-list"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Wizard Control Footer Buttons -->
+                    <div class="wizard-footer">
+                        <button type="button" class="btn btn-secondary" id="wizard-btn-prev" disabled>
+                            <i class="fa-solid fa-chevron-left"></i> Previous
+                        </button>
+                        <button type="button" class="btn btn-primary" id="wizard-btn-next">
+                            Next Step <i class="fa-solid fa-chevron-right"></i>
+                        </button>
+                        <button type="button" class="btn btn-primary glow-effect hidden" id="wizard-btn-submit">
+                            <i class="fa-solid fa-check-double"></i> Complete Registration
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+
+
+        <!-- ========================================== -->
+        <!-- VIEW 4: FARMER DASHBOARD                   -->
+        <!-- ========================================== -->
+        <section id="view-dashboard" class="view-section hidden">
+            <div class="dashboard-container">
+                
+                <!-- Farmer Info Overview Header -->
+                <div class="dashboard-header-card glass-panel">
+                    <div class="farmer-info">
+                        <div class="farmer-avatar-lg">
+                            <i class="fa-solid fa-user-shield"></i>
+                        </div>
+                        <div class="farmer-details">
+                            <h2 id="dash-farmer-name">Loading...</h2>
+                            <p class="farmer-meta">
+                                <span><i class="fa-solid fa-phone"></i> <span id="dash-farmer-phone">--</span></span>
+                                <span><i class="fa-solid fa-envelope"></i> <span id="dash-farmer-email">--</span></span>
+                                <span><i class="fa-solid fa-location-dot"></i> <span id="dash-farmer-location">--</span></span>
+                                <span class="badge badge-accent"><i class="fa-solid fa-language"></i> <span id="dash-farmer-lang">--</span></span>
+                            </p>
+                        </div>
+                    </div>
+                    <div class="dashboard-actions">
+                        <button class="btn btn-primary" id="btn-dash-add-farm">
+                            <i class="fa-solid fa-plus"></i> Add New Farm
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Dashboard Quick Stats -->
+                <div class="stats-row">
+                    <div class="stat-card glass-panel">
+                        <div class="stat-icon"><i class="fa-solid fa-map-location"></i></div>
+                        <div class="stat-data">
+                            <span class="stat-value" id="stat-total-farms">0</span>
+                            <span class="stat-label">Registered Farms</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass-panel">
+                        <div class="stat-icon"><i class="fa-solid fa-vector-square"></i></div>
+                        <div class="stat-data">
+                            <span class="stat-value" id="stat-total-area">0</span>
+                            <span class="stat-label">Total Land Area</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass-panel">
+                        <div class="stat-icon"><i class="fa-solid fa-wheat-awn"></i></div>
+                        <div class="stat-data">
+                            <span class="stat-value" id="stat-total-crops">0</span>
+                            <span class="stat-label">Active Crops</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Main Content Tabs / Sections -->
+                <div class="dashboard-sections">
+                    <div class="section-header">
+                        <h3><i class="fa-solid fa-wheat-field"></i> Registered Farms & Plot Locations</h3>
+                    </div>
+
+                    <div id="farms-grid" class="cards-grid">
+                        <!-- Dynamic Farm Cards rendered via app.js -->
+                        <div class="empty-state glass-panel">
+                            <i class="fa-solid fa-spinner fa-spin"></i>
+                            <p>Loading your farm data...</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+    </main>
+
+    <!-- MODAL: ADD NEW FARM -->
+    <div id="modal-add-farm" class="modal-overlay hidden">
+        <div class="modal-card glass-panel">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-plus-circle"></i> Add New Farm Plot</h3>
+                <button class="btn-close" id="modal-add-farm-close">&times;</button>
+            </div>
+            <form id="form-add-farm" class="modal-body">
+                <div class="form-group">
+                    <label for="mf-name">Farm Name *</label>
+                    <input type="text" id="mf-name" class="form-input" placeholder="e.g. North Plot" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="mf-area">Area *</label>
+                        <input type="number" id="mf-area" class="form-input" step="0.01" placeholder="4.5" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="mf-unit">Unit *</label>
+                        <select id="mf-unit" class="form-input">
+                            <option value="acre">Acre</option>
+                            <option value="ha">Hectare</option>
+                            <option value="guntha">Guntha</option>
+                            <option value="bigha">Bigha</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="mf-irrigation">Irrigation Type *</label>
+                    <select id="mf-irrigation" class="form-input">
+                        <option value="drip">Drip</option>
+                        <option value="sprinkler">Sprinkler</option>
+                        <option value="borewell">Borewell</option>
+                        <option value="canal">Canal</option>
+                        <option value="rain_fed">Rain-fed</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="mf-lat">Latitude *</label>
+                        <input type="number" id="mf-lat" class="form-input" step="0.000001" placeholder="22.5726" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="mf-lng">Longitude *</label>
+                        <input type="number" id="mf-lng" class="form-input" step="0.000001" placeholder="88.3639" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary btn-block">Save Farm</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: ADD CROP TO FARM -->
+    <div id="modal-add-crop" class="modal-overlay hidden">
+        <div class="modal-card glass-panel">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-seedling"></i> Add Crop Record</h3>
+                <button class="btn-close" id="modal-add-crop-close">&times;</button>
+            </div>
+            <form id="form-add-crop" class="modal-body">
+                <input type="hidden" id="mc-farm-id">
+                <div class="form-group">
+                    <label for="mc-crop-name">Crop Name *</label>
+                    <input type="text" id="mc-crop-name" class="form-input" placeholder="e.g. Maize" required>
+                </div>
+                <div class="form-group">
+                    <label for="mc-variety">Variety</label>
+                    <input type="text" id="mc-variety" class="form-input" placeholder="e.g. Hybrid Pioneer">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="mc-sowing">Sowing Date *</label>
+                        <input type="date" id="mc-sowing" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="mc-harvest">Expected Harvest Date</label>
+                        <input type="date" id="mc-harvest" class="form-input">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="mc-stage">Growth Stage</label>
+                    <select id="mc-stage" class="form-input"></select>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary btn-block">Add Crop to Farm</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- External Leaflet JS for Maps -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- App Scripts -->
+    <script src="js/api.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
