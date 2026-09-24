@@ -40,4 +40,5 @@ urlpatterns = [
 
     # ── Dashboard ────────────────────────────────────────────────────────────
     path('api/dashboard/', DashboardView.as_view(), name='dashboard'),
+    path('', include('weather.urls')),
 ]

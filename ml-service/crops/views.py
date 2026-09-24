@@ -120,15 +120,26 @@ class GrowthStageListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        if not GrowthStage.objects.exists():
+            DEFAULT_STAGES = [
+                {"name": "Sowing / Germination", "order": 1, "description": "Initial seed planting and germination phase."},
+                {"name": "Seedling", "order": 2, "description": "Early emergence and initial leaf development."},
+                {"name": "Vegetative", "order": 3, "description": "Rapid stem elongation and canopy growth."},
+                {"name": "Tillering / Branching", "order": 4, "description": "Development of side shoots and main branches."},
+                {"name": "Flowering / Reproductive", "order": 5, "description": "Blossoming and pollination phase."},
+                {"name": "Grain Filling / Pod Formation", "order": 6, "description": "Development and filling of grain or fruit."},
+                {"name": "Maturity / Harvest", "order": 7, "description": "Final ripening and harvest ready."},
+            ]
+            for stage in DEFAULT_STAGES:
+                GrowthStage.objects.get_or_create(name=stage["name"], defaults=stage)
+
         crop_type = request.query_params.get('crop_type')
         if crop_type:
-            # Specific stages for this crop + generic stages
             qs = GrowthStage.objects.filter(
                 crop_type=crop_type
             ) | GrowthStage.objects.filter(crop_type__isnull=True)
             qs = qs.order_by('order')
         else:
-            # Return all stages (generic first, then crop-specific)
-            qs = GrowthStage.objects.all()
+            qs = GrowthStage.objects.all().order_by('order')
 
         return Response(GrowthStageSerializer(qs, many=True).data)

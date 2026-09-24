@@ -28,6 +28,8 @@ environ.Env.read_env(BASE_DIR / '.env')
 SECRET_KEY = env('SECRET_KEY')
 DEBUG = env('DEBUG')
 ALLOWED_HOSTS = env('ALLOWED_HOSTS')
+if 'testserver' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('testserver')
 
 # ---------------------------------------------------------------------------
 # Application definition
@@ -48,6 +50,7 @@ INSTALLED_APPS = [
     'accounts',
     'farms',
     'crops',
+    'weather',
 ]
 
 MIDDLEWARE = [
@@ -157,6 +160,11 @@ else:
 # ---------------------------------------------------------------------------
 MAPBOX_ACCESS_TOKEN = env('MAPBOX_ACCESS_TOKEN', default='')
 MAPBOX_REQUEST_TIMEOUT = 10  # seconds
+# ---------------------------------------------------------------------------
+# Weather configuration
+# ---------------------------------------------------------------------------
+WEATHER_PROVIDER = env('WEATHER_PROVIDER', default='OPEN_METEO')
+WEATHER_CACHE_MINUTES = env.int('WEATHER_CACHE_MINUTES', default=30)
 
 # ---------------------------------------------------------------------------
 # Logging

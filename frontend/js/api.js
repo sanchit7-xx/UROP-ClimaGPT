@@ -28,7 +28,7 @@ const API = (() => {
     'use strict';
 
     // ── Configuration ─────────────────────────────────────────
-    const BASE_URL = 'http://localhost:8000';
+    const BASE_URL = 'http://localhost:8001';
     const TOKEN_KEY = 'climagpt_token';
     const USER_KEY = 'climagpt_user';
 
@@ -282,6 +282,26 @@ const API = (() => {
         return request('/api/health/', { auth: false });
     }
 
+    // ── Weather ───────────────────────────────────────────────
+
+    async function getCurrentWeather(farmId) {
+        return request(`/api/weather/farms/${farmId}/current/`);
+    }
+
+    async function getHourlyForecast(farmId) {
+        return request(`/api/weather/farms/${farmId}/hourly/`);
+    }
+
+    async function getDailyForecast(farmId) {
+        return request(`/api/weather/farms/${farmId}/daily/`);
+    }
+
+    async function refreshWeather(farmId) {
+        return request(`/api/weather/farms/${farmId}/refresh/`, {
+            method: 'POST',
+        });
+    }
+
     // ── Public API ────────────────────────────────────────────
 
     return {
@@ -314,6 +334,12 @@ const API = (() => {
 
         // Growth Stages
         listGrowthStages,
+
+        // Weather
+        getCurrentWeather,
+        getHourlyForecast,
+        getDailyForecast,
+        refreshWeather,
 
         // Dashboard
         getDashboard,
