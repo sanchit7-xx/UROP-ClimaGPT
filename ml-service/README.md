@@ -20,6 +20,9 @@ The project is highly modular to support future machine learning and API integra
 - **`accounts/`**: Farmer profile and authentication APIs.
 - **`farms/`**: Farm management APIs, ensuring location is rigorously tracked via GPS coordinates.
 - **`crops/`**: Crop profiles, dynamic growth stages, and history.
+- **`weather/`**: Real-time forecast, Open-Meteo provider, historical weather pipeline, and cleaned dataset exports (Stages 2 & 3).
+- **`soil/`**: Soil moisture monitoring, sensor ingestion, and environmental state analysis (Stage 4).
+- **`predictions/`**: Machine learning weather forecasting engine, feature engineering lag datasets, scikit-learn models, persistence baseline comparisons, and evaluation endpoints (Stage 5).
 
 ## Database Structure
 
@@ -28,58 +31,82 @@ The project is highly modular to support future machine learning and API integra
     - `Farm` (1:N with FarmerProfile)
       - `CropProfile` (1:N with Farm)
         - `GrowthStage` (Extensible model, N:1 with CropProfile)
+      - `Weather` (1:N with Farm, Stages 2 & 3)
+      - `SoilMoisture` (1:N with Farm, Stage 4)
+      - `ModelMetadata` (1:N with Farm / Global, Stage 5)
+      - `PredictionLog` (Audit trail of ML predictions, Stage 5)
 
-## Setup Instructions
+## Setup & Quickstart Guide for Team Members
 
-### 1. Environment Variables
-
-Copy `.env.example` to `.env`:
+### 1. Environment Setup
 ```bash
-copy .env.example .env
-```
-Ensure you provide a valid `MAPBOX_ACCESS_TOKEN`. (For local development, `DATABASE_URL` is commented out by default to use SQLite).
+# Clone the repository and navigate to backend directory
+cd ml-service
 
-### 2. Install Dependencies
-
-```bash
+# Create and activate virtual environment
 python -m venv venv
+# On Windows:
 venv\Scripts\activate
+# On Linux/macOS:
+source venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### 3. Database Migration
-
+### 2. Environment Variables
+Copy `.env.example` to `.env`:
 ```bash
-python manage.py makemigrations
+# On Windows:
+copy .env.example .env
+# On Linux/macOS:
+cp .env.example .env
+```
+*(By default SQLite is enabled for quick local development; configure `DATABASE_URL` if connecting to PostgreSQL).*
+
+### 3. Database Migrations
+```bash
 python manage.py migrate
 ```
 
-### 4. Create Superuser
-
+### 4. Machine Learning Models (Stage 5)
+Pre-trained model artifacts are included in `predictions/ml/artifacts/`.
+To re-train or train custom models for specific farms or globally:
 ```bash
-python manage.py createsuperuser
+# Train global baseline models:
+python manage.py train_weather_models
+
+# Train models specific to a farm:
+python manage.py train_weather_models --farm-id 1
 ```
 
-### 5. Run Server
-
+### 5. Running the Backend Server
 ```bash
-python manage.py runserver
+python manage.py runserver 127.0.0.1:8000
 ```
 
-### 6. Run Tests
+### 6. Running the Frontend Dashboard
+In a separate terminal, serve the `frontend/` folder:
+```bash
+# From repository root:
+python -m http.server 3000 --directory frontend
+```
+Then visit **`http://localhost:3000`** in your browser.
 
+### 7. Running Automated Tests
 ```bash
 python manage.py test
 ```
+All 124 tests across `accounts`, `farms`, `weather`, `soil`, and `predictions` will execute.
 
-## Known Limitations (Stage 1)
-- Currently uses SQLite for local development out-of-the-box (PostgreSQL configuration is ready via `DATABASE_URL` in `.env`).
-- No weather data or machine learning models are implemented yet.
-- Mapbox geocoding runs synchronously during farm creation.
-- `GrowthStage` objects currently need to be seeded into the database manually or via the admin panel.
+## Documentation References
+- Stage 4: [docs/soil-moisture.md](docs/soil-moisture.md) — Soil Moisture & Environmental State Architecture.
+- Stage 5: [predictions/](predictions/) — ML Weather Prediction Models, Lags Feature Engineering, and Inference Engine.
 
-## Future Development Roadmap (Stage 2+)
-- **Stage 2**: Weather APIs integration (IMD, ECMWF, GFS).
-- **Stage 3**: Crop-risk and irrigation machine learning models.
-- **Stage 4**: Proactive alerts and Celery/Redis integration.
-- **Stage 5**: ClimaGPT LLM multilingual chatbot integration.
+## Completed Stages
+- **Stage 1**: Farmer Onboarding, Farm Registry, Location Tracking & Crop Lifecycles.
+- **Stage 2**: Real-time Current Weather, Hourly Forecast (24h) & 7-Day Forecast.
+- **Stage 3**: Historical Weather Ingestion, Validation/Cleaning/Normalizing Pipeline, and Quality Summaries.
+- **Stage 4**: Multi-depth Soil Moisture Monitoring, Sensor Ingestion & Environmental State Analysis.
+- **Stage 5**: AI Weather Prediction Engine (RandomForest/GradientBoosting), 24-hr Forecast Horizons, and Baseline Evaluation.
+

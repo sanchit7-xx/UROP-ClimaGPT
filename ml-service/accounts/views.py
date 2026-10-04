@@ -39,11 +39,16 @@ class RegisterView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         user, token = serializer.save()
+        farmer_data = (
+            FarmerProfileSerializer(user.farmer_profile).data
+            if hasattr(user, 'farmer_profile')
+            else None
+        )
         return Response(
             {
                 'message': 'Registration successful. Welcome to ClimaGPT!',
                 'token': token.key,
-                'farmer': FarmerProfileSerializer(user.farmer_profile).data,
+                'farmer': farmer_data,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -72,8 +77,15 @@ class LoginView(APIView):
         email = serializer.validated_data['email'].lower().strip()
         password = serializer.validated_data['password']
 
-        # Username == email (set during registration)
+        # Authenticate by username or email
         user = authenticate(request, username=email, password=password)
+        if user is None:
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            user_by_email = User.objects.filter(email__iexact=email).first()
+            if user_by_email and user_by_email.check_password(password):
+                user = user_by_email
+
         if user is None:
             return Response(
                 {'error': 'Unauthorized', 'details': 'Invalid email or password.'},
@@ -81,10 +93,15 @@ class LoginView(APIView):
             )
 
         token, _ = Token.objects.get_or_create(user=user)
+        farmer_data = (
+            FarmerProfileSerializer(user.farmer_profile).data
+            if hasattr(user, 'farmer_profile')
+            else None
+        )
         return Response({
             'message': 'Login successful.',
             'token': token.key,
-            'farmer': FarmerProfileSerializer(user.farmer_profile).data,
+            'farmer': farmer_data,
         })
 
 
@@ -104,6 +121,11 @@ class FarmerProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        if not hasattr(request.user, 'farmer_profile'):
+            return Response(
+                {'error': 'Not Found', 'details': 'Farmer profile not found for this account.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         serializer = FarmerProfileSerializer(
             request.user.farmer_profile,
             context={'request': request},
@@ -111,6 +133,11 @@ class FarmerProfileView(APIView):
         return Response(serializer.data)
 
     def put(self, request):
+        if not hasattr(request.user, 'farmer_profile'):
+            return Response(
+                {'error': 'Not Found', 'details': 'Farmer profile not found for this account.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         serializer = FarmerProfileSerializer(
             request.user.farmer_profile,
             data=request.data,

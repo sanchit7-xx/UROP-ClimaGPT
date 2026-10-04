@@ -27,6 +27,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.renderers import BaseRenderer, JSONRenderer
 
 from farms.models import Farm
 from .models import ForecastTypeChoices
@@ -42,10 +43,11 @@ def parse_date_params(request):
     start_date_str = request.query_params.get('start_date')
     end_date_str = request.query_params.get('end_date')
 
-    if not start_date_str and request.method == 'POST' and hasattr(request, 'data'):
-        start_date_str = request.data.get('start_date')
-    if not end_date_str and request.method == 'POST' and hasattr(request, 'data'):
-        end_date_str = request.data.get('end_date')
+    if request.method == 'POST' and isinstance(getattr(request, 'data', None), dict):
+        if not start_date_str:
+            start_date_str = request.data.get('start_date')
+        if not end_date_str:
+            end_date_str = request.data.get('end_date')
 
     today = date.today()
     if not end_date_str:
@@ -81,7 +83,7 @@ class FarmOwnershipMixin:
     permission_classes = [IsAuthenticated]
 
     def get_farm(self, farm_id):
-        farmer_profile = self.request.user.farmer_profile
+        farmer_profile = getattr(self.request.user, 'farmer_profile', None)
         return get_object_or_404(Farm, pk=farm_id, farmer=farmer_profile)
 
     def _farm_location(self, farm):
@@ -281,20 +283,32 @@ class CollectHistoricalWeatherView(FarmOwnershipMixin, APIView):
             )
 
 
+class CSVExportRenderer(BaseRenderer):
+    media_type = 'text/csv'
+    format = 'csv'
+
+    def render(self, data, accepted_media_type=None, renderer_context=None):
+        return data
+
+
+class ParquetExportRenderer(BaseRenderer):
+    media_type = 'application/octet-stream'
+    format = 'parquet'
+
+    def render(self, data, accepted_media_type=None, renderer_context=None):
+        return data
+
+
 class ExportHistoricalWeatherView(FarmOwnershipMixin, APIView):
     """
     GET /api/weather/farms/{farm_id}/historical/export/?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&format=csv|parquet
 
     Export cleaned historical weather dataset as CSV or Parquet download.
     """
+    renderer_classes = [CSVExportRenderer, ParquetExportRenderer, JSONRenderer]
 
     def get(self, request, farm_id):
-        print(f"DEBUG: ExportHistoricalWeatherView called for farm_id={farm_id}, user={request.user}")
-        try:
-            farm = self.get_farm(farm_id)
-        except Exception as e:
-            print(f"DEBUG: get_farm failed: {e}")
-            raise
+        farm = self.get_farm(farm_id)
         start_date, end_date, error_msg = parse_date_params(request)
         if error_msg:
             return Response({"detail": error_msg}, status=status.HTTP_400_BAD_REQUEST)

@@ -1,0 +1,39 @@
+# ClimaGPT Root .gitignore
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environment files
+.env
+*.env
+local_settings.py
+
+# Databases & logs
+*.sqlite3
+*.sqlite3-journal
+*.log
+
+# Node & Frontend
+node_modules/
+dist/
+.cache/
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/

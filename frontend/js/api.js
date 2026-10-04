@@ -28,7 +28,7 @@ const API = (() => {
     'use strict';
 
     // ── Configuration ─────────────────────────────────────────
-    const BASE_URL = 'http://localhost:8001';
+    let BASE_URL = window.CLIMAGPT_API_URL || localStorage.getItem('climagpt_base_url') || 'http://localhost:8000';
     const TOKEN_KEY = 'climagpt_token';
     const USER_KEY = 'climagpt_user';
 
@@ -93,7 +93,26 @@ const API = (() => {
         }
 
         try {
-            const response = await fetch(`${BASE_URL}${endpoint}`, config);
+            let response;
+            try {
+                response = await fetch(`${BASE_URL}${endpoint}`, config);
+            } catch (networkErr) {
+                // If primary port (e.g. 8000) failed, try alternate port (8001) automatically
+                const fallbackUrl = BASE_URL.includes(':8000')
+                    ? BASE_URL.replace(':8000', ':8001')
+                    : (BASE_URL.includes(':8001') ? BASE_URL.replace(':8001', ':8000') : null);
+
+                if (fallbackUrl && !window.CLIMAGPT_API_URL) {
+                    try {
+                        response = await fetch(`${fallbackUrl}${endpoint}`, config);
+                        BASE_URL = fallbackUrl;
+                    } catch (fallbackErr) {
+                        throw networkErr;
+                    }
+                } else {
+                    throw networkErr;
+                }
+            }
 
             // Handle 204 No Content (e.g., DELETE)
             if (response.status === 204) {
@@ -302,6 +321,79 @@ const API = (() => {
         });
     }
 
+    // ── Stage 3 Historical Weather ─────────────────────────────
+
+    async function getHistoricalWeather(farmId, startDate, endDate) {
+        let url = `/api/weather/farms/${farmId}/historical/`;
+        const params = [];
+        if (startDate) params.push(`start_date=${encodeURIComponent(startDate)}`);
+        if (endDate) params.push(`end_date=${encodeURIComponent(endDate)}`);
+        if (params.length) url += `?${params.join('&')}`;
+        return request(url);
+    }
+
+    async function getHistoricalSummary(farmId, startDate, endDate) {
+        let url = `/api/weather/farms/${farmId}/historical/summary/`;
+        const params = [];
+        if (startDate) params.push(`start_date=${encodeURIComponent(startDate)}`);
+        if (endDate) params.push(`end_date=${encodeURIComponent(endDate)}`);
+        if (params.length) url += `?${params.join('&')}`;
+        return request(url);
+    }
+
+    async function collectHistoricalWeather(farmId, startDate, endDate) {
+        return request(`/api/weather/farms/${farmId}/historical/collect/`, {
+            method: 'POST',
+            body: { start_date: startDate, end_date: endDate },
+        });
+    }
+
+    async function exportHistoricalWeather(farmId, startDate, endDate, format = 'csv') {
+        let url = `/api/weather/farms/${farmId}/historical/export/?format=${encodeURIComponent(format)}`;
+        if (startDate) url += `&start_date=${encodeURIComponent(startDate)}`;
+        if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;
+        return request(url);
+    }
+
+    // ── Stage 4: Soil Moisture & Environmental State ─────────────
+
+    async function getCurrentSoilMoisture(farmId) {
+        return request(`/api/soil-moisture/farms/${farmId}/current/`);
+    }
+
+    async function getSoilMoistureHistory(farmId, startDate, endDate, depth) {
+        let url = `/api/soil-moisture/farms/${farmId}/history/`;
+        const params = [];
+        if (startDate) params.push(`start_date=${encodeURIComponent(startDate)}`);
+        if (endDate) params.push(`end_date=${encodeURIComponent(endDate)}`);
+        if (depth !== undefined && depth !== null && depth !== '') {
+            params.push(`depth=${encodeURIComponent(depth)}`);
+        }
+        if (params.length) url += `?${params.join('&')}`;
+        return request(url);
+    }
+
+    async function submitSensorReading(data) {
+        return request('/api/soil-moisture/sensor/', {
+            method: 'POST',
+            body: data,
+        });
+    }
+
+    async function getEnvironmentalState(farmId) {
+        return request(`/api/environment/farms/${farmId}/state/`);
+    }
+
+    // ── Stage 5: AI Weather Predictions ─────────────────────────
+    async function getWeatherPredictions(farmId, refresh = false) {
+        const query = refresh ? '?refresh=true' : '';
+        return request(`/api/predictions/farms/${farmId}/weather/${query}`);
+    }
+
+    async function getPredictionEvaluation(farmId) {
+        return request(`/api/predictions/farms/${farmId}/weather/evaluation/`);
+    }
+
     // ── Public API ────────────────────────────────────────────
 
     return {
@@ -335,11 +427,27 @@ const API = (() => {
         // Growth Stages
         listGrowthStages,
 
-        // Weather
+        // Weather (Stage 2 & 3)
         getCurrentWeather,
         getHourlyForecast,
         getDailyForecast,
         refreshWeather,
+        getHistoricalWeather,
+        getHistoricalSummary,
+        collectHistoricalWeather,
+        exportHistoricalWeather,
+
+        // Soil Moisture (Stage 4)
+        getCurrentSoilMoisture,
+        getSoilMoistureHistory,
+        submitSensorReading,
+
+        // Environmental State (Stage 4)
+        getEnvironmentalState,
+
+        // AI Weather Prediction (Stage 5)
+        getWeatherPredictions,
+        getPredictionEvaluation,
 
         // Dashboard
         getDashboard,
@@ -349,3 +457,20 @@ const API = (() => {
         APIError,
     };
 })();
+
+// Global service interfaces for Stage 4 requirements
+window.soilMoistureApi = {
+    getCurrent: (farmId) => API.getCurrentSoilMoisture(farmId),
+    getHistory: (farmId, startDate, endDate, depth) => API.getSoilMoistureHistory(farmId, startDate, endDate, depth),
+    submitSensorReading: (data) => API.submitSensorReading(data),
+};
+
+window.environmentApi = {
+    getState: (farmId) => API.getEnvironmentalState(farmId),
+};
+
+// Global service interface for Stage 5 requirements
+window.predictionApi = {
+    getPredictions: (farmId, refresh) => API.getWeatherPredictions(farmId, refresh),
+    getEvaluation: (farmId) => API.getPredictionEvaluation(farmId),
+};

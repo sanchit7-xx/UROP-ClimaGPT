@@ -40,8 +40,9 @@ class FarmCropListCreateView(APIView):
 
     def _get_farm(self, farm_id, request):
         """Retrieve farm, returning 404 if it doesn't belong to this farmer."""
+        profile = getattr(request.user, 'farmer_profile', None)
         return get_object_or_404(
-            Farm, pk=farm_id, farmer=request.user.farmer_profile
+            Farm, pk=farm_id, farmer=profile
         )
 
     def get(self, request, farm_id):
@@ -78,10 +79,11 @@ class CropDetailView(APIView):
         Retrieve crop by PK, verifying ownership through the
         farm → farmer chain.  Returns 404 if not found or not owned.
         """
+        profile = getattr(request.user, 'farmer_profile', None)
         return get_object_or_404(
             CropProfile,
             pk=pk,
-            farm__farmer=request.user.farmer_profile,
+            farm__farmer=profile,
         )
 
     def get(self, request, pk):

@@ -229,7 +229,7 @@ class HistoricalWeatherService:
                 'missing_values_count': 0,
                 'duplicates_count': 0,
                 'invalid_records_count': 0,
-                'outliers_count': sum(1 for r in records if getattr(r, 'temperature', 0) and (r.temperature > 45 or r.temperature < -10)),
+                'outliers_count': sum(1 for r in records if getattr(r, 'temperature', None) is not None and (r.temperature > 45 or r.temperature < -10)),
                 'quality_status': 'Good',
                 'last_collected': last_collected,
                 'source': WeatherSourceChoices.OPEN_METEO,

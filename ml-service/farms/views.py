@@ -42,7 +42,10 @@ class FarmListCreateView(APIView):
 
     def get(self, request):
         """Return only the authenticated farmer's farms."""
-        farms = Farm.objects.filter(farmer=request.user.farmer_profile)
+        profile = getattr(request.user, 'farmer_profile', None)
+        if not profile:
+            return Response([])
+        farms = Farm.objects.filter(farmer=profile)
         return Response(FarmSerializer(farms, many=True).data)
 
     def post(self, request):
@@ -64,7 +67,7 @@ class FarmListCreateView(APIView):
 
         # Attempt reverse geocoding (best-effort — never blocks farm creation)
         address_patch = {}
-        if settings.MAPBOX_ACCESS_TOKEN:
+        if settings.MAPBOX_ACCESS_TOKEN and not settings.MAPBOX_ACCESS_TOKEN.startswith(('pk.mock', 'test_', 'pk.your_')):
             try:
                 mapbox = MapboxService()
                 lat = float(serializer.validated_data['latitude'])
@@ -79,8 +82,15 @@ class FarmListCreateView(APIView):
                     'Mapbox reverse geocoding skipped during farm creation: %s', exc
                 )
 
+        profile = getattr(request.user, 'farmer_profile', None)
+        if not profile:
+            return Response(
+                {'error': 'Not Found', 'details': 'Farmer profile not found for this account.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         farm = serializer.save(
-            farmer=request.user.farmer_profile,
+            farmer=profile,
             **address_patch,
         )
         return Response(FarmSerializer(farm).data, status=status.HTTP_201_CREATED)
@@ -96,8 +106,9 @@ class FarmDetailView(APIView):
         Returns 404 (not 403) when the farm exists but belongs to
         another farmer — this prevents farm ID enumeration.
         """
+        profile = getattr(request.user, 'farmer_profile', None)
         return get_object_or_404(
-            Farm, pk=pk, farmer=request.user.farmer_profile
+            Farm, pk=pk, farmer=profile
         )
 
     def get(self, request, pk):
@@ -139,7 +150,12 @@ class DashboardView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        profile = request.user.farmer_profile
+        profile = getattr(request.user, 'farmer_profile', None)
+        if not profile:
+            return Response(
+                {'error': 'Not Found', 'details': 'Farmer profile not found for this account.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         farms = (
             Farm.objects
             .filter(farmer=profile)

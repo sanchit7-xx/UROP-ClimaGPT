@@ -485,6 +485,62 @@
                         </div>
                     </div>
 
+                    <!-- ============================================================ -->
+                    <!-- STAGE 4: SOIL & ENVIRONMENT DASHBOARD                        -->
+                    <!-- ============================================================ -->
+                    <div class="soil-dashboard-section glass-panel" style="margin-bottom: 30px; padding: 24px;">
+                        <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; border-bottom: 1px solid var(--clr-border); padding-bottom: 16px; margin-bottom: 20px;">
+                            <div class="header-title-group">
+                                <h3><i class="fa-solid fa-seedling" style="color: var(--clr-primary-400);"></i> Soil & Environmental State</h3>
+                                <p style="font-size: 0.85rem; opacity: 0.75; margin-top: 2px;">Soil Moisture Monitoring, Sensor Telemetry & Physical Farm State</p>
+                            </div>
+                            <div class="soil-controls" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                <button class="btn btn-secondary btn-sm" id="btn-refresh-soil" title="Refresh Soil & Environmental Data">
+                                    <i class="fa-solid fa-arrows-rotate"></i> Refresh Soil Data
+                                </button>
+                                <button class="btn btn-primary btn-sm glow-effect" id="btn-open-sensor-modal" title="Ingest Physical Sensor Reading (or Demo Test)">
+                                    <i class="fa-solid fa-microchip"></i> Ingest Sensor Data
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Soil Moisture & Environmental State Content Container -->
+                        <div id="soil-content-wrapper">
+                            <div class="empty-state">
+                                <i class="fa-solid fa-seedling fa-bounce" style="font-size: 2rem; color: var(--clr-primary-400); margin-bottom: 10px;"></i>
+                                <p>Select a farm above to monitor soil moisture and environmental conditions.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ============================================================ -->
+                    <!-- STAGE 5: AI WEATHER PREDICTION DASHBOARD                     -->
+                    <!-- ============================================================ -->
+                    <div class="prediction-dashboard-section glass-panel" style="margin-bottom: 30px; padding: 24px;">
+                        <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; border-bottom: 1px solid var(--clr-border); padding-bottom: 16px; margin-bottom: 20px;">
+                            <div class="header-title-group">
+                                <h3><i class="fa-solid fa-brain" style="color: #818cf8;"></i> AI Weather Prediction <span class="badge badge-ai" style="margin-left: 8px; font-size: 0.75rem; background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.4); padding: 2px 8px; border-radius: 12px;">ML Regressor</span></h3>
+                                <p style="font-size: 0.85rem; opacity: 0.75; margin-top: 2px;">Short-term meteorological predictions trained on real farm historical observations & environmental state</p>
+                            </div>
+                            <div class="prediction-controls" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                <span class="prediction-disclaimer-tag" style="font-size: 0.75rem; color: #a1a1aa; background: rgba(255,255,255,0.05); padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">
+                                    <i class="fa-solid fa-flask"></i> AI / ML Prediction (Not Official Forecast)
+                                </span>
+                                <button class="btn btn-secondary btn-sm" id="btn-refresh-prediction" title="Recompute ML Predictions">
+                                    <i class="fa-solid fa-arrows-rotate"></i> Re-predict
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- AI Weather Prediction Content Container -->
+                        <div id="prediction-content-wrapper">
+                            <div class="empty-state">
+                                <i class="fa-solid fa-brain fa-bounce" style="font-size: 2rem; color: #818cf8; margin-bottom: 10px;"></i>
+                                <p>Select a farm above to generate AI weather predictions.</p>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- REGISTERED FARMS GRID -->
                     <div class="section-header">
                         <h3><i class="fa-solid fa-wheat-field"></i> Registered Farms & Plot Locations</h3>
@@ -606,6 +662,62 @@
                 </div>
                 <div class="modal-footer">
                     <button type="submit" class="btn btn-primary btn-block">Add Crop to Farm</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: INGEST SENSOR DATA (DEMO & HARDWARE INGESTION) -->
+    <div id="modal-sensor-ingest" class="modal-overlay hidden">
+        <div class="modal-card glass-panel" style="max-width: 520px;">
+            <div class="modal-header">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <h3><i class="fa-solid fa-microchip"></i> Sensor Data Ingestion</h3>
+                    <span class="badge badge-accent" style="font-size: 0.75rem;">DEMO SENSOR DATA</span>
+                </div>
+                <button class="btn-close" id="modal-sensor-ingest-close">&times;</button>
+            </div>
+            <p class="step-desc" style="padding: 0 20px; margin: 8px 0 0; font-size: 0.85rem; opacity: 0.75;">
+                Submit an in-situ telemetry reading for the selected farm. Readings are stored in the normalized database and tracked by depth and source.
+            </p>
+            <form id="form-sensor-ingest" class="modal-body">
+                <div class="form-group">
+                    <label for="sensor-farm-select">Target Farm *</label>
+                    <select id="sensor-farm-select" class="form-input" required></select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="sensor-moisture">Moisture (%) *</label>
+                        <input type="number" id="sensor-moisture" class="form-input" step="0.1" min="0" max="100" placeholder="e.g. 24.5" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="sensor-depth">Measurement Depth (cm) *</label>
+                        <input type="number" id="sensor-depth" class="form-input" step="1" min="0" value="20" placeholder="20" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="sensor-unit">Unit *</label>
+                        <select id="sensor-unit" class="form-input" disabled>
+                            <option value="PERCENT" selected>PERCENT (%)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="sensor-confidence">Confidence Score (0.0 - 1.0)</label>
+                        <input type="number" id="sensor-confidence" class="form-input" step="0.01" min="0" max="1" value="0.98" placeholder="0.98">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="sensor-timestamp">Timestamp (UTC) *</label>
+                    <input type="datetime-local" id="sensor-timestamp" class="form-input" required>
+                </div>
+                <div class="modal-footer" style="padding: 16px 0 0; display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-quick-fill-sensor">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Preset (24.5%)
+                    </button>
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">
+                        <i class="fa-solid fa-upload"></i> Ingest Reading
+                    </button>
                 </div>
             </form>
         </div>

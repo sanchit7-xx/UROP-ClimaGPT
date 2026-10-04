@@ -17,6 +17,7 @@ import re
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from rest_framework import serializers
 from rest_framework.authtoken.models import Token
 
@@ -109,15 +110,16 @@ class RegisterSerializer(serializers.Serializer):
             'gender': validated_data.pop('gender', None) or None,
         }
 
-        # Use email as username so Django's auth.authenticate works with email
-        user = User.objects.create_user(
-            username=validated_data['email'],
-            email=validated_data['email'],
-            password=validated_data['password'],
-        )
-        FarmerProfile.objects.create(user=user, **profile_fields)
-        token, _ = Token.objects.get_or_create(user=user)
-        return user, token
+        with transaction.atomic():
+            # Use email as username so Django's auth.authenticate works with email
+            user = User.objects.create_user(
+                username=validated_data['email'],
+                email=validated_data['email'],
+                password=validated_data['password'],
+            )
+            FarmerProfile.objects.create(user=user, **profile_fields)
+            token, _ = Token.objects.get_or_create(user=user)
+            return user, token
 
 
 # ---------------------------------------------------------------------------

@@ -25,9 +25,9 @@ environ.Env.read_env(BASE_DIR / '.env')
 # ---------------------------------------------------------------------------
 # Security
 # ---------------------------------------------------------------------------
-SECRET_KEY = env('SECRET_KEY')
-DEBUG = env('DEBUG')
-ALLOWED_HOSTS = env('ALLOWED_HOSTS')
+SECRET_KEY = env('SECRET_KEY', default='django-insecure-climagpt-dev-secret-key-stage1-stage2')
+DEBUG = env.bool('DEBUG', default=True)
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1', 'testserver'])
 if 'testserver' not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append('testserver')
 
@@ -51,6 +51,8 @@ INSTALLED_APPS = [
     'farms',
     'crops',
     'weather',
+    'soil',
+    'predictions',
 ]
 
 MIDDLEWARE = [
@@ -152,7 +154,7 @@ REST_FRAMEWORK = {
 if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True
 else:
-    CORS_ALLOWED_ORIGINS = env('CORS_ALLOWED_ORIGINS')
+    CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[])
 
 # ---------------------------------------------------------------------------
 # Mapbox
@@ -202,5 +204,20 @@ LOGGING = {
         'accounts': {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
         'farms': {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
         'crops': {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
+        'weather': {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
+        'soil': {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
+        'predictions': {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
     },
 }
+
+# ---------------------------------------------------------------------------
+# Stage 4: Soil Moisture & Environmental State
+# ---------------------------------------------------------------------------
+SOIL_MOISTURE_DEFAULT_UNIT = env('SOIL_MOISTURE_DEFAULT_UNIT', default='PERCENT')
+SOIL_MOISTURE_HISTORY_MAX_DAYS = env.int('SOIL_MOISTURE_HISTORY_MAX_DAYS', default=365)
+
+# ---------------------------------------------------------------------------
+# Stage 5: AI Weather Prediction Models
+# ---------------------------------------------------------------------------
+MODEL_ARTIFACTS_DIR = env('MODEL_ARTIFACTS_DIR', default=str(BASE_DIR / 'predictions' / 'ml' / 'artifacts'))
+DEFAULT_MODEL_VERSION = env('DEFAULT_MODEL_VERSION', default='weather_v1')

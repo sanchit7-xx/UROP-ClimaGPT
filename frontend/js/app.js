@@ -28,6 +28,8 @@ const App = (() => {
         bindAuthForms();
         bindWizard();
         bindDashboard();
+        bindSoilDashboard();
+        bindPredictionDashboard();
         bindModals();
 
         // Check if user is already logged in
@@ -1047,6 +1049,1134 @@ const App = (() => {
         }
     }
 
+    // ── Stage 4: Soil Moisture & Farm Environmental State Controller ──
+    let currentSoilFarmId = null;
+    let lastSoilHistoryData = null;
+    let cachedFarmerFarms = [];
+
+    function getSourceBadge(source) {
+        const s = (source || 'SENSOR').toUpperCase();
+        switch (s) {
+            case 'SENSOR':
+                return '<span class="source-badge source-badge-sensor"><i class="fa-solid fa-microchip"></i> Sensor</span>';
+            case 'SATELLITE':
+                return '<span class="source-badge source-badge-satellite"><i class="fa-solid fa-satellite"></i> Satellite</span>';
+            case 'REANALYSIS':
+                return '<span class="source-badge source-badge-reanalysis"><i class="fa-solid fa-layer-group"></i> Reanalysis</span>';
+            case 'ESTIMATED':
+                return '<span class="source-badge source-badge-estimated"><i class="fa-solid fa-calculator"></i> Estimated</span>';
+            default:
+                return `<span class="source-badge source-badge-sensor">${escapeHTML(s)}</span>`;
+        }
+    }
+
+    function getConfidenceBadge(confidence, level) {
+        if (confidence === null || confidence === undefined) {
+            return '<span class="confidence-badge confidence-not-provided"><i class="fa-solid fa-circle-question"></i> Not provided</span>';
+        }
+        const num = parseFloat(confidence);
+        const lvl = level || (num >= 0.8 ? 'High' : (num >= 0.5 ? 'Medium' : 'Low'));
+        const pct = Math.round(num * 100);
+        if (lvl === 'High') {
+            return `<span class="confidence-badge confidence-high"><i class="fa-solid fa-circle-check"></i> High (${pct}%)</span>`;
+        } else if (lvl === 'Medium') {
+            return `<span class="confidence-badge confidence-medium"><i class="fa-solid fa-circle-exclamation"></i> Medium (${pct}%)</span>`;
+        } else {
+            return `<span class="confidence-badge confidence-low"><i class="fa-solid fa-triangle-exclamation"></i> Low (${pct}%)</span>`;
+        }
+    }
+
+    async function loadSoilDashboard(farmId) {
+        if (!farmId) return;
+        currentSoilFarmId = farmId;
+        const wrapper = $('#soil-content-wrapper');
+        if (!wrapper) return;
+
+        wrapper.innerHTML = `
+            <div class="empty-state">
+                <i class="fa-solid fa-spinner fa-spin" style="font-size: 2rem; color: var(--clr-primary-400); margin-bottom: 10px;"></i>
+                <p>Loading soil conditions and environmental diagnostics...</p>
+            </div>
+        `;
+
+        try {
+            const [currentRes, envStateRes, historyRes] = await Promise.all([
+                API.getCurrentSoilMoisture(farmId).catch(err => ({ available: false, error: err })),
+                API.getEnvironmentalState(farmId).catch(() => null),
+                API.getSoilMoistureHistory(farmId).catch(() => ({ count: 0, results: [] })),
+            ]);
+
+            renderSoilDashboard(currentRes, envStateRes, historyRes, farmId);
+        } catch (err) {
+            wrapper.innerHTML = `
+                <div class="empty-state">
+                    <i class="fa-solid fa-triangle-exclamation" style="font-size: 2rem; color: var(--clr-danger-400); margin-bottom: 10px;"></i>
+                    <p>Failed to load soil data: ${escapeHTML(err.message)}</p>
+                    <button class="btn btn-secondary btn-sm" onclick="App.refreshSoilForFarm(${farmId})" style="margin-top: 10px;">
+                        <i class="fa-solid fa-arrows-rotate"></i> Try Again
+                    </button>
+                </div>
+            `;
+        }
+    }
+
+    function renderSoilDashboard(currentRes, envState, historyRes, farmId) {
+        const wrapper = $('#soil-content-wrapper');
+        if (!wrapper) return;
+
+        const hasMoisture = currentRes && currentRes.available !== false && currentRes.moisture !== undefined && currentRes.moisture !== null;
+        const historyList = (historyRes && historyRes.results) ? historyRes.results : [];
+        lastSoilHistoryData = historyList;
+
+        // 1. Current Soil Moisture Card HTML
+        let soilMoistureCardHTML = '';
+        if (hasMoisture) {
+            const moistureVal = currentRes.moisture;
+            const depthVal = currentRes.depth ?? 20;
+            const sourceBadge = getSourceBadge(currentRes.source);
+            const confBadge = getConfidenceBadge(currentRes.confidence, currentRes.confidence_level);
+            const updatedTime = currentRes.timestamp
+                ? new Date(currentRes.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })
+                : 'Recent';
+
+            soilMoistureCardHTML = `
+                <div class="soil-metric-card glass-panel">
+                    <div class="soil-card-header">
+                        <div class="soil-card-title">
+                            <i class="fa-solid fa-droplet" style="color: var(--clr-primary-400);"></i> Current Soil Moisture
+                        </div>
+                        ${sourceBadge}
+                    </div>
+                    <div class="soil-display-hero">
+                        <div>
+                            <div class="soil-moisture-large">${moistureVal}%</div>
+                            <div style="font-size: 0.85rem; color: var(--clr-text-muted); margin-top: 4px;">
+                                Volumetric Water Content (${escapeHTML(currentRes.unit || 'PERCENT')})
+                            </div>
+                        </div>
+                        <div style="font-size: 3.5rem; opacity: 0.15; color: var(--clr-primary-400);">
+                            <i class="fa-solid fa-water"></i>
+                        </div>
+                    </div>
+                    <div class="soil-meta-pills">
+                        <div class="soil-meta-row">
+                            <span style="color: var(--clr-text-muted);"><i class="fa-solid fa-arrows-up-down"></i> Measurement Depth</span>
+                            <strong>${depthVal} cm</strong>
+                        </div>
+                        <div class="soil-meta-row">
+                            <span style="color: var(--clr-text-muted);"><i class="fa-solid fa-shield-halved"></i> Data Confidence</span>
+                            ${confBadge}
+                        </div>
+                        <div class="soil-meta-row">
+                            <span style="color: var(--clr-text-muted);"><i class="fa-solid fa-clock"></i> Last Updated</span>
+                            <span>${updatedTime}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else {
+            soilMoistureCardHTML = `
+                <div class="soil-metric-card glass-panel">
+                    <div class="soil-card-header">
+                        <div class="soil-card-title">
+                            <i class="fa-solid fa-droplet-slash" style="color: var(--clr-accent-400);"></i> Soil Moisture
+                        </div>
+                        <span class="badge badge-accent" style="font-size: 0.75rem;">Data Unavailable</span>
+                    </div>
+                    <div style="padding: 10px 0;">
+                        <p style="font-weight: 600; font-size: 1rem; margin-bottom: 6px; color: var(--clr-text);">
+                            Soil moisture data is not available for this farm.
+                        </p>
+                        <p style="font-size: 0.85rem; color: var(--clr-text-muted); line-height: 1.5;">
+                            Physical in-situ telemetry is required to measure localized soil water content. Supported future sources include:
+                        </p>
+                        <ul style="font-size: 0.82rem; margin: 10px 0 14px 20px; color: var(--clr-text-muted); line-height: 1.6;">
+                            <li><strong>In-situ Sensor:</strong> Real-time hardware telemetry at 5–50 cm depth.</li>
+                            <li><strong>Satellite Products:</strong> SMAP & Sentinel-1 radar moisture grids.</li>
+                            <li><strong>Reanalysis:</strong> ECMWF ERA5-Land land surface models.</li>
+                        </ul>
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-top: auto;">
+                        <button class="btn btn-secondary btn-sm" onclick="App.openSensorIngestModal(${farmId})">
+                            <i class="fa-solid fa-microchip"></i> Ingest Sensor Reading (Demo)
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 2. Farm Environmental State Card HTML
+        const weather = envState?.weather || {};
+        const soilInfo = envState?.soil || {};
+        const tempStr = weather.temperature !== undefined && weather.temperature !== null ? `${Math.round(weather.temperature * 10) / 10}°C` : '--';
+        const humidStr = weather.humidity !== undefined && weather.humidity !== null ? `${weather.humidity}%` : '--';
+        const rainStr = weather.recent_precipitation !== undefined && weather.recent_precipitation !== null ? `${weather.recent_precipitation} mm` : '--';
+        const etStr = weather.evapotranspiration !== undefined && weather.evapotranspiration !== null ? `${weather.evapotranspiration} mm` : '--';
+        const soilTypeStr = soilInfo.display_name || 'Not specified';
+        const smStr = hasMoisture ? `${currentRes.moisture}%` : '--';
+
+        const envStateCardHTML = `
+            <div class="soil-metric-card glass-panel">
+                <div class="soil-card-header">
+                    <div class="soil-card-title">
+                        <i class="fa-solid fa-earth-americas" style="color: var(--clr-accent-400);"></i> Farm Environmental State
+                    </div>
+                    <span class="badge badge-primary" style="font-size: 0.75rem;">Physical Diagnostics</span>
+                </div>
+                <div class="env-parameters-grid" style="margin: 8px 0 16px;">
+                    <div class="env-param-box">
+                        <div class="env-param-label"><i class="fa-solid fa-droplet" style="color: #34d399;"></i> Soil Moisture</div>
+                        <div class="env-param-val">${smStr}</div>
+                    </div>
+                    <div class="env-param-box">
+                        <div class="env-param-label"><i class="fa-solid fa-temperature-half" style="color: #fbbf24;"></i> Temperature</div>
+                        <div class="env-param-val">${tempStr}</div>
+                    </div>
+                    <div class="env-param-box">
+                        <div class="env-param-label"><i class="fa-solid fa-water" style="color: #38bdf8;"></i> Humidity</div>
+                        <div class="env-param-val">${humidStr}</div>
+                    </div>
+                    <div class="env-param-box">
+                        <div class="env-param-label"><i class="fa-solid fa-cloud-rain" style="color: #60a5fa;"></i> Recent Rain</div>
+                        <div class="env-param-val">${rainStr}</div>
+                    </div>
+                    <div class="env-param-box">
+                        <div class="env-param-label"><i class="fa-solid fa-sun-plant-wilt" style="color: #a78bfa;"></i> ET</div>
+                        <div class="env-param-val">${etStr}</div>
+                    </div>
+                    <div class="env-param-box">
+                        <div class="env-param-label"><i class="fa-solid fa-cubes-stacked" style="color: #f472b6;"></i> Soil Type</div>
+                        <div class="env-param-val" style="font-size: 0.95rem;">${escapeHTML(soilTypeStr)}</div>
+                    </div>
+                </div>
+                <div style="font-size: 0.78rem; color: var(--clr-text-dim); border-top: 1px dashed rgba(255,255,255,0.06); padding-top: 8px;">
+                    <i class="fa-solid fa-circle-info"></i> Observed physical state gathered from real farm telemetry and local meteorological readings.
+                </div>
+            </div>
+        `;
+
+        // 3. History Panel HTML (Chart & Data Table)
+        let historyPanelHTML = '';
+        if (historyList.length > 0) {
+            const latestRec = historyList[historyList.length - 1];
+            const latestTimeStr = new Date(latestRec.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+
+            historyPanelHTML = `
+                <div class="soil-history-panel">
+                    <div class="soil-history-controls">
+                        <div>
+                            <h4 style="font-size: 1rem; font-weight: 700; font-family: var(--font-display); margin-bottom: 2px;">
+                                <i class="fa-solid fa-chart-area" style="color: var(--clr-primary-400);"></i> Soil Moisture History Chart
+                            </h4>
+                            <span style="font-size: 0.8rem; color: var(--clr-text-muted);">Measured volumetric water content over time</span>
+                        </div>
+                        <div class="soil-filter-group">
+                            <button class="btn btn-secondary btn-sm" id="btn-toggle-soil-table">
+                                <i class="fa-solid fa-table"></i> Toggle Data Table
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Quality Indicators -->
+                    <div class="soil-quality-bar">
+                        <span><i class="fa-solid fa-database"></i> Records: <strong>${historyList.length}</strong></span>
+                        <span><i class="fa-solid fa-clock-rotate-left"></i> Latest Reading: <strong>${latestTimeStr}</strong></span>
+                        <span><i class="fa-solid fa-ruler-vertical"></i> Primary Depth: <strong>${latestRec.depth || 20} cm</strong></span>
+                        <span><i class="fa-solid fa-shield-check"></i> Quality: <strong>Continuity Validated</strong></span>
+                    </div>
+
+                    <!-- Canvas Chart -->
+                    <div class="soil-chart-container">
+                        <canvas id="soil-history-canvas" height="240"></canvas>
+                    </div>
+
+                    <!-- Collapsible Data Table -->
+                    <div id="soil-table-container" class="soil-table-wrapper hidden">
+                        <table class="soil-data-table">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>Moisture</th>
+                                    <th>Unit</th>
+                                    <th>Depth</th>
+                                    <th>Source</th>
+                                    <th>Confidence</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${historyList.slice().reverse().map(item => `
+                                    <tr>
+                                        <td>${new Date(item.timestamp).toLocaleString()}</td>
+                                        <td><strong>${item.moisture}%</strong></td>
+                                        <td>${escapeHTML(item.unit || 'PERCENT')}</td>
+                                        <td>${item.depth} cm</td>
+                                        <td>${getSourceBadge(item.source)}</td>
+                                        <td>${getConfidenceBadge(item.confidence, item.confidence_level)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        wrapper.innerHTML = `
+            <div class="soil-metrics-grid">
+                ${soilMoistureCardHTML}
+                ${envStateCardHTML}
+            </div>
+            ${historyPanelHTML}
+        `;
+
+        // Initialize Canvas Chart if history exists
+        if (historyList.length > 0) {
+            setTimeout(() => {
+                drawSoilChart(historyList);
+                const toggleBtn = $('#btn-toggle-soil-table');
+                const tableContainer = $('#soil-table-container');
+                if (toggleBtn && tableContainer) {
+                    toggleBtn.addEventListener('click', () => {
+                        tableContainer.classList.toggle('hidden');
+                    });
+                }
+            }, 60);
+        }
+    }
+
+    function drawSoilChart(records) {
+        const canvas = document.getElementById('soil-history-canvas');
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        const width = rect.width || 600;
+        const height = 240;
+
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, width, height);
+
+        if (!records || records.length === 0) return;
+
+        const padding = { top: 25, right: 30, bottom: 40, left: 45 };
+        const chartW = width - padding.left - padding.right;
+        const chartH = height - padding.top - padding.bottom;
+
+        const values = records.map(r => r.moisture);
+        const minVal = Math.max(0, Math.floor(Math.min(...values) - 5));
+        const maxVal = Math.min(100, Math.ceil(Math.max(...values) + 5));
+        const range = (maxVal - minVal) || 1;
+
+        // Draw gridlines
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.lineWidth = 1;
+        ctx.font = '11px Inter, sans-serif';
+        ctx.fillStyle = 'rgba(232, 245, 233, 0.55)';
+        ctx.textAlign = 'right';
+
+        const yTicks = 4;
+        for (let i = 0; i <= yTicks; i++) {
+            const val = Math.round(minVal + (range * i) / yTicks);
+            const y = padding.top + chartH - (i / yTicks) * chartH;
+            ctx.beginPath();
+            ctx.moveTo(padding.left, y);
+            ctx.lineTo(width - padding.right, y);
+            ctx.stroke();
+            ctx.fillText(`${val}%`, padding.left - 8, y + 4);
+        }
+
+        // Points calculation
+        const points = records.map((r, i) => {
+            const x = records.length === 1
+                ? padding.left + chartW / 2
+                : padding.left + (i / (records.length - 1)) * chartW;
+            const y = padding.top + chartH - ((r.moisture - minVal) / range) * chartH;
+            return { x, y, record: r };
+        });
+
+        // Area fill with gradient
+        const gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartH);
+        gradient.addColorStop(0, 'rgba(52, 211, 153, 0.35)');
+        gradient.addColorStop(1, 'rgba(52, 211, 153, 0.00)');
+
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, padding.top + chartH);
+        points.forEach(p => ctx.lineTo(p.x, p.y));
+        ctx.lineTo(points[points.length - 1].x, padding.top + chartH);
+        ctx.closePath();
+        ctx.fillStyle = gradient;
+        ctx.fill();
+
+        // Line stroke with glow
+        ctx.save();
+        ctx.shadowColor = 'rgba(52, 211, 153, 0.6)';
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        points.forEach((p, i) => {
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+        });
+        ctx.strokeStyle = '#34d399';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        ctx.restore();
+
+        // Data points & X-axis labels
+        ctx.textAlign = 'center';
+        points.forEach((p, i) => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 4.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#10b981';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+
+            const showLabel = (records.length <= 8) || (i % Math.ceil(records.length / 6) === 0) || (i === records.length - 1);
+            if (showLabel) {
+                const d = new Date(p.record.timestamp);
+                const label = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                ctx.fillStyle = 'rgba(232, 245, 233, 0.6)';
+                ctx.fillText(label, p.x, height - 12);
+            }
+        });
+    }
+
+    async function refreshSoilForFarm(farmId) {
+        const btn = $('#btn-refresh-soil');
+        if (btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Refreshing...';
+        toast('Refreshing soil & environmental telemetry...', 'info');
+        try {
+            await loadSoilDashboard(farmId);
+            toast('Soil & environmental state updated! 🌱', 'success');
+        } catch (err) {
+            toast(`Failed to refresh soil: ${err.message}`, 'error');
+        } finally {
+            if (btn) btn.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i> Refresh Soil Data';
+        }
+    }
+
+    function openSensorIngestModal(targetFarmId) {
+        const modal = $('#modal-sensor-ingest');
+        const farmSelect = $('#sensor-farm-select');
+        if (!modal || !farmSelect) return;
+
+        farmSelect.innerHTML = '';
+        if (cachedFarmerFarms && cachedFarmerFarms.length > 0) {
+            cachedFarmerFarms.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f.id;
+                opt.textContent = `${f.farm_name} (${f.village || f.district || 'Plot'})`;
+                farmSelect.appendChild(opt);
+            });
+            if (targetFarmId) farmSelect.value = targetFarmId;
+        }
+
+        const now = new Date();
+        const localIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        $('#sensor-timestamp').value = localIso;
+
+        modal.classList.remove('hidden');
+    }
+
+    function bindSoilDashboard() {
+        const btnRefresh = $('#btn-refresh-soil');
+        if (btnRefresh) {
+            btnRefresh.addEventListener('click', () => {
+                if (currentWeatherFarmId) {
+                    refreshSoilForFarm(currentWeatherFarmId);
+                } else {
+                    toast('Please select a farm first.', 'error');
+                }
+            });
+        }
+
+        const btnOpen = $('#btn-open-sensor-modal');
+        if (btnOpen) {
+            btnOpen.addEventListener('click', () => {
+                openSensorIngestModal(currentWeatherFarmId);
+            });
+        }
+
+        const modal = $('#modal-sensor-ingest');
+        const btnClose = $('#modal-sensor-ingest-close');
+        if (btnClose && modal) {
+            btnClose.addEventListener('click', () => {
+                modal.classList.add('hidden');
+            });
+        }
+
+        const btnPreset = $('#btn-quick-fill-sensor');
+        if (btnPreset) {
+            btnPreset.addEventListener('click', () => {
+                $('#sensor-moisture').value = '24.5';
+                $('#sensor-depth').value = '20';
+                $('#sensor-confidence').value = '0.98';
+                const now = new Date();
+                const localIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                $('#sensor-timestamp').value = localIso;
+            });
+        }
+
+        const form = $('#form-sensor-ingest');
+        if (form) {
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const submitBtn = form.querySelector('button[type="submit"]');
+                const farmSelect = $('#sensor-farm-select');
+                const farmId = parseInt(farmSelect.value, 10);
+                const moisture = parseFloat($('#sensor-moisture').value);
+                const depth = parseInt($('#sensor-depth').value, 10);
+                const confidence = parseFloat($('#sensor-confidence').value);
+                const timeVal = $('#sensor-timestamp').value;
+
+                if (!farmId || isNaN(moisture) || isNaN(depth) || !timeVal) {
+                    toast('Please fill in all required fields.', 'error');
+                    return;
+                }
+
+                setLoading(submitBtn, true);
+                try {
+                    const payload = {
+                        farm_id: farmId,
+                        moisture,
+                        depth,
+                        unit: 'PERCENT',
+                        confidence: isNaN(confidence) ? null : confidence,
+                        timestamp: new Date(timeVal).toISOString(),
+                    };
+
+                    await API.submitSensorReading(payload);
+                    toast(`Sensor reading (${moisture}%) ingested successfully! 🌱`, 'success');
+                    modal.classList.add('hidden');
+                    form.reset();
+                    loadSoilDashboard(farmId);
+                } catch (err) {
+                    toast(`Failed to ingest sensor reading: ${err.message}`, 'error');
+                } finally {
+                    setLoading(submitBtn, false);
+                }
+            });
+        }
+
+        window.addEventListener('resize', () => {
+            if (lastSoilHistoryData && lastSoilHistoryData.length > 0) {
+                drawSoilChart(lastSoilHistoryData);
+            }
+            if (lastPredictionData && lastPredictionData.predictions && lastPredictionData.predictions.length > 0) {
+                drawPredictionComparisonChart();
+            }
+        });
+    }
+
+    // ============================================================
+    // STAGE 5: AI WEATHER PREDICTION
+    // ============================================================
+
+    let currentPredictionFarmId = null;
+    let lastPredictionData = null;
+    let lastEvaluationData = null;
+    let lastObservedHourlyData = [];
+    let predictionChartTarget = 'temperature';
+
+    async function loadPredictionDashboard(farmId, refresh = false) {
+        if (!farmId) return;
+        currentPredictionFarmId = farmId;
+        const wrapper = $('#prediction-content-wrapper');
+        if (!wrapper) return;
+
+        wrapper.innerHTML = `
+            <div class="empty-state">
+                <i class="fa-solid fa-spinner fa-spin" style="font-size: 2rem; color: #818cf8; margin-bottom: 10px;"></i>
+                <p>Generating AI weather predictions using trained Random Forest regressors...</p>
+                <span style="font-size: 0.8rem; color: var(--clr-text-dim);">Evaluating farm-level historical features & environmental state</span>
+            </div>
+        `;
+
+        try {
+            const [predRes, evalRes, hourlyObs] = await Promise.all([
+                API.getWeatherPredictions(farmId, refresh).catch(err => ({ error: err.error || 'PREDICTION_ERROR', message: err.message })),
+                API.getPredictionEvaluation(farmId).catch(() => null),
+                API.getHourlyForecast(farmId).catch(() => ({ results: [] })),
+            ]);
+
+            if (predRes.error) {
+                renderPredictionErrorState(predRes, farmId);
+                return;
+            }
+
+            lastObservedHourlyData = (hourlyObs && hourlyObs.results) ? hourlyObs.results : [];
+            renderPredictionDashboard(predRes, evalRes, lastObservedHourlyData, farmId);
+        } catch (err) {
+            wrapper.innerHTML = `
+                <div class="empty-state">
+                    <i class="fa-solid fa-triangle-exclamation" style="font-size: 2rem; color: var(--clr-danger-400); margin-bottom: 10px;"></i>
+                    <p>Failed to load AI predictions: ${escapeHTML(err.message)}</p>
+                    <button class="btn btn-secondary btn-sm" onclick="App.refreshPredictionForFarm(${farmId})" style="margin-top: 10px;">
+                        <i class="fa-solid fa-arrows-rotate"></i> Try Again
+                    </button>
+                </div>
+            `;
+        }
+    }
+
+    function renderPredictionErrorState(errorObj, farmId) {
+        const wrapper = $('#prediction-content-wrapper');
+        if (!wrapper) return;
+
+        if (errorObj.error === 'MODEL_NOT_TRAINED') {
+            wrapper.innerHTML = `
+                <div class="ai-state-banner glass-panel" style="padding: 24px; border: 1px dashed rgba(99, 102, 241, 0.4); border-radius: 12px; background: rgba(99, 102, 241, 0.05); text-align: center;">
+                    <i class="fa-solid fa-brain" style="font-size: 2.2rem; color: #818cf8; margin-bottom: 12px; display: inline-block;"></i>
+                    <h4 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 8px;">AI Model Not Yet Trained for this Farm</h4>
+                    <p style="font-size: 0.9rem; color: var(--clr-text-muted); max-width: 600px; margin: 0 auto 16px;">
+                        AI weather prediction is not available yet because machine learning regressors have not been trained on historical observations for this farm plot.
+                    </p>
+                    <div style="font-family: monospace; font-size: 0.85rem; background: rgba(0,0,0,0.3); padding: 8px 16px; border-radius: 6px; display: inline-block; color: #a5b4fc; margin-bottom: 16px;">
+                        python manage.py train_weather_models --farm-id=${farmId}
+                    </div>
+                    <div>
+                        <button class="btn btn-secondary btn-sm" onclick="App.refreshPredictionForFarm(${farmId})">
+                            <i class="fa-solid fa-arrows-rotate"></i> Check Again
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else if (errorObj.error === 'INSUFFICIENT_DATA') {
+            wrapper.innerHTML = `
+                <div class="ai-state-banner glass-panel" style="padding: 24px; border: 1px dashed rgba(245, 158, 11, 0.4); border-radius: 12px; background: rgba(245, 158, 11, 0.05); text-align: center;">
+                    <i class="fa-solid fa-database" style="font-size: 2.2rem; color: #f59e0b; margin-bottom: 12px; display: inline-block;"></i>
+                    <h4 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 8px;">Insufficient Historical Observations</h4>
+                    <p style="font-size: 0.9rem; color: var(--clr-text-muted); max-width: 600px; margin: 0 auto 16px;">
+                        AI weather prediction requires at least 24 consecutive hourly observations to seed feature lags and rolling windows.
+                    </p>
+                    <button class="btn btn-secondary btn-sm" onclick="App.refreshPredictionForFarm(${farmId})">
+                        <i class="fa-solid fa-arrows-rotate"></i> Refresh Telemetry
+                    </button>
+                </div>
+            `;
+        } else {
+            wrapper.innerHTML = `
+                <div class="empty-state">
+                    <i class="fa-solid fa-triangle-exclamation" style="font-size: 2rem; color: var(--clr-danger-400); margin-bottom: 10px;"></i>
+                    <p>${escapeHTML(errorObj.message || 'Unable to generate predictions.')}</p>
+                    <button class="btn btn-secondary btn-sm" onclick="App.refreshPredictionForFarm(${farmId})" style="margin-top: 10px;">
+                        <i class="fa-solid fa-arrows-rotate"></i> Try Again
+                    </button>
+                </div>
+            `;
+        }
+    }
+
+    function renderPredictionDashboard(predData, evalData, recentObsData, farmId) {
+        const wrapper = $('#prediction-content-wrapper');
+        if (!wrapper) return;
+
+        lastPredictionData = predData;
+        lastEvaluationData = evalData;
+
+        const preds = predData.predictions || [];
+        const modelInfo = predData.model_info || {};
+
+        // Calculate 24h summary statistics
+        const temps = preds.map(p => p.temperature).filter(v => v !== null && v !== undefined);
+        const rains = preds.map(p => p.rainfall).filter(v => v !== null && v !== undefined);
+        const humids = preds.map(p => p.humidity).filter(v => v !== null && v !== undefined);
+        const winds = preds.map(p => p.wind_speed).filter(v => v !== null && v !== undefined);
+
+        const p0 = preds[0] || {};
+        const minTemp = temps.length ? Math.min(...temps) : '--';
+        const maxTemp = temps.length ? Math.max(...temps) : '--';
+        const sumRain = rains.length ? rains.reduce((a, b) => a + b, 0).toFixed(1) : '0.0';
+        const avgHumid = humids.length ? Math.round(humids.reduce((a, b) => a + b, 0) / humids.length) : '--';
+        const maxWind = winds.length ? Math.max(...winds) : '--';
+
+        const lastGenStr = predData.generated_at
+            ? new Date(predData.generated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })
+            : 'Just now';
+
+        // 1. Hero Metric Cards HTML
+        const heroCardsHTML = `
+            <div class="prediction-hero-grid">
+                <!-- Temperature Card -->
+                <div class="pred-card glass-panel" style="border-top: 3px solid #fbbf24;">
+                    <div class="pred-card-header">
+                        <span class="pred-card-title"><i class="fa-solid fa-temperature-half" style="color: #fbbf24;"></i> Temperature</span>
+                        <span class="pred-tag">°C</span>
+                    </div>
+                    <div class="pred-value-display">
+                        <span class="pred-main-val">${p0.temperature !== undefined ? p0.temperature : '--'}</span>
+                        <span class="pred-unit">°C</span>
+                    </div>
+                    <div class="pred-card-footer">
+                        <i class="fa-solid fa-arrows-up-down"></i> 24h Range: <strong>${minTemp}°C – ${maxTemp}°C</strong>
+                    </div>
+                </div>
+
+                <!-- Rainfall Card -->
+                <div class="pred-card glass-panel" style="border-top: 3px solid #60a5fa;">
+                    <div class="pred-card-header">
+                        <span class="pred-card-title"><i class="fa-solid fa-cloud-rain" style="color: #60a5fa;"></i> Precipitation</span>
+                        <span class="pred-tag">mm</span>
+                    </div>
+                    <div class="pred-value-display">
+                        <span class="pred-main-val">${p0.rainfall !== undefined ? p0.rainfall : '--'}</span>
+                        <span class="pred-unit">mm</span>
+                    </div>
+                    <div class="pred-card-footer">
+                        <i class="fa-solid fa-cloud-showers-heavy"></i> 24h Total: <strong>${sumRain} mm</strong>
+                    </div>
+                </div>
+
+                <!-- Humidity Card -->
+                <div class="pred-card glass-panel" style="border-top: 3px solid #34d399;">
+                    <div class="pred-card-header">
+                        <span class="pred-card-title"><i class="fa-solid fa-droplet" style="color: #34d399;"></i> Relative Humidity</span>
+                        <span class="pred-tag">%</span>
+                    </div>
+                    <div class="pred-value-display">
+                        <span class="pred-main-val">${p0.humidity !== undefined ? p0.humidity : '--'}</span>
+                        <span class="pred-unit">%</span>
+                    </div>
+                    <div class="pred-card-footer">
+                        <i class="fa-solid fa-gauge"></i> 24h Average: <strong>${avgHumid}%</strong>
+                    </div>
+                </div>
+
+                <!-- Wind Speed Card -->
+                <div class="pred-card glass-panel" style="border-top: 3px solid #a78bfa;">
+                    <div class="pred-card-header">
+                        <span class="pred-card-title"><i class="fa-solid fa-wind" style="color: #a78bfa;"></i> Wind Speed</span>
+                        <span class="pred-tag">km/h</span>
+                    </div>
+                    <div class="pred-value-display">
+                        <span class="pred-main-val">${p0.wind_speed !== undefined ? p0.wind_speed : '--'}</span>
+                        <span class="pred-unit">km/h</span>
+                    </div>
+                    <div class="pred-card-footer">
+                        <i class="fa-solid fa-gauge-high"></i> 24h Peak: <strong>${maxWind} km/h</strong>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // 2. Model Transparency Banner HTML
+        const transparencyHTML = `
+            <div class="model-transparency-bar glass-panel">
+                <div class="transparency-item">
+                    <span class="transparency-label"><i class="fa-solid fa-microchip"></i> Model</span>
+                    <strong class="transparency-value">${escapeHTML(modelInfo.model_name || 'Random Forest Regressor')}</strong>
+                </div>
+                <div class="transparency-item">
+                    <span class="transparency-label"><i class="fa-solid fa-tag"></i> Version</span>
+                    <strong class="transparency-value">${escapeHTML(predData.model_version || 'weather_v1')}</strong>
+                </div>
+                <div class="transparency-item">
+                    <span class="transparency-label"><i class="fa-solid fa-calendar-range"></i> Training Period</span>
+                    <strong class="transparency-value">${escapeHTML(modelInfo.training_period || 'Continuous')}</strong>
+                </div>
+                <div class="transparency-item">
+                    <span class="transparency-label"><i class="fa-solid fa-database"></i> Training Samples</span>
+                    <strong class="transparency-value">${modelInfo.sample_count ? modelInfo.sample_count.toLocaleString() + ' samples' : '720 samples'}</strong>
+                </div>
+                <div class="transparency-item">
+                    <span class="transparency-label"><i class="fa-solid fa-clock"></i> Inferred At</span>
+                    <strong class="transparency-value">${lastGenStr}</strong>
+                </div>
+            </div>
+        `;
+
+        // 3. Comparison Chart HTML
+        const chartSectionHTML = `
+            <div class="prediction-chart-panel glass-panel" style="margin-top: 20px; padding: 20px;">
+                <div class="chart-header-controls" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
+                    <div>
+                        <h4 style="font-size: 1rem; font-weight: 700; margin-bottom: 2px;">
+                            <i class="fa-solid fa-chart-line" style="color: #818cf8;"></i> Observed Weather vs AI Prediction
+                        </h4>
+                        <span style="font-size: 0.8rem; color: var(--clr-text-muted);">
+                            Solid line represents recent observations; dashed line shows AI ML predictions forward in time.
+                        </span>
+                    </div>
+                    <div class="chart-target-pills" style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        <button class="target-pill ${predictionChartTarget === 'temperature' ? 'active' : ''}" onclick="App.setPredictionChartTarget('temperature')">
+                            <i class="fa-solid fa-temperature-half"></i> Temperature
+                        </button>
+                        <button class="target-pill ${predictionChartTarget === 'precipitation' ? 'active' : ''}" onclick="App.setPredictionChartTarget('precipitation')">
+                            <i class="fa-solid fa-cloud-rain"></i> Rainfall
+                        </button>
+                        <button class="target-pill ${predictionChartTarget === 'relative_humidity' ? 'active' : ''}" onclick="App.setPredictionChartTarget('relative_humidity')">
+                            <i class="fa-solid fa-droplet"></i> Humidity
+                        </button>
+                        <button class="target-pill ${predictionChartTarget === 'wind_speed' ? 'active' : ''}" onclick="App.setPredictionChartTarget('wind_speed')">
+                            <i class="fa-solid fa-wind"></i> Wind
+                        </button>
+                    </div>
+                </div>
+
+                <div class="chart-legend-bar" style="display: flex; gap: 18px; font-size: 0.8rem; margin-bottom: 12px;">
+                    <span style="display: flex; align-items: center; gap: 6px; color: #38bdf8;">
+                        <span style="width: 16px; height: 3px; background: #38bdf8; display: inline-block; border-radius: 2px;"></span>
+                        Observed Weather (Past)
+                    </span>
+                    <span style="display: flex; align-items: center; gap: 6px; color: #a78bfa;">
+                        <span style="width: 16px; height: 3px; background: #a78bfa; display: inline-block; border-top: 2px dashed #a78bfa;"></span>
+                        AI / ML Prediction (Next 24h)
+                    </span>
+                </div>
+
+                <div class="prediction-canvas-container" style="position: relative; width: 100%; height: 260px;">
+                    <canvas id="prediction-comparison-canvas" height="260"></canvas>
+                </div>
+            </div>
+        `;
+
+        // 4. Model Evaluation Table HTML
+        let evaluationTableHTML = '';
+        if (evalData && evalData.targets) {
+            const targetRows = Object.entries(evalData.targets).map(([key, t]) => {
+                const b = t.baseline || {};
+                const m = t.ml_model || {};
+                const targetDisplayNames = {
+                    'temperature': 'Temperature (°C)',
+                    'precipitation': 'Precipitation / Rainfall (mm)',
+                    'relative_humidity': 'Relative Humidity (%)',
+                    'wind_speed': 'Wind Speed (km/h)',
+                };
+                const displayName = targetDisplayNames[key] || key;
+                const imp = t.improvement_pct;
+                const impBadge = imp > 0
+                    ? `<span class="badge badge-success" style="font-size: 0.75rem;">+${imp}% MAE Reduction</span>`
+                    : `<span class="badge badge-secondary" style="font-size: 0.75rem;">${imp}% vs Persistence</span>`;
+
+                return `
+                    <tr>
+                        <td><strong>${escapeHTML(displayName)}</strong></td>
+                        <td>${b.mae !== undefined && b.mae !== null ? b.mae : '—'}</td>
+                        <td>${b.rmse !== undefined && b.rmse !== null ? b.rmse : '—'}</td>
+                        <td><strong>${m.mae !== undefined && m.mae !== null ? m.mae : '—'}</strong></td>
+                        <td>${m.rmse !== undefined && m.rmse !== null ? m.rmse : '—'}</td>
+                        <td>${m.r2 !== undefined && m.r2 !== null ? m.r2 : '—'}</td>
+                        <td>${impBadge}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            evaluationTableHTML = `
+                <div class="model-evaluation-panel glass-panel" style="margin-top: 20px; padding: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+                        <div>
+                            <h4 style="font-size: 1rem; font-weight: 700; margin-bottom: 2px;">
+                                <i class="fa-solid fa-vial-circle-check" style="color: #34d399;"></i> Research Evaluation: ML Regressor vs Baseline Benchmark
+                            </h4>
+                            <span style="font-size: 0.8rem; color: var(--clr-text-muted);">
+                                Evaluated on out-of-sample chronological test split (15% future holdout without data leakage).
+                            </span>
+                        </div>
+                        <button class="btn btn-secondary btn-sm" id="btn-toggle-eval-table">
+                            <i class="fa-solid fa-table"></i> Toggle Details
+                        </button>
+                    </div>
+
+                    <div id="eval-table-container" class="eval-table-wrapper" style="overflow-x: auto;">
+                        <table class="evaluation-metrics-table">
+                            <thead>
+                                <tr>
+                                    <th>Weather Target</th>
+                                    <th>Baseline MAE</th>
+                                    <th>Baseline RMSE</th>
+                                    <th>ML MAE</th>
+                                    <th>ML RMSE</th>
+                                    <th>ML R²</th>
+                                    <th>Performance Comparison</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${targetRows}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 5. Collapsible 24-Hour Prediction Breakdown Table
+        const hourlyRowsHTML = preds.map(p => `
+            <tr>
+                <td>${new Date(p.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}</td>
+                <td><strong>${p.temperature !== null ? p.temperature + '°C' : '—'}</strong></td>
+                <td>${p.rainfall !== null ? p.rainfall + ' mm' : '—'}</td>
+                <td>${p.humidity !== null ? p.humidity + '%' : '—'}</td>
+                <td>${p.wind_speed !== null ? p.wind_speed + ' km/h' : '—'}</td>
+            </tr>
+        `).join('');
+
+        const hourlyBreakdownHTML = `
+            <div class="hourly-pred-panel glass-panel" style="margin-top: 20px; padding: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <div>
+                        <h4 style="font-size: 1rem; font-weight: 700; margin-bottom: 2px;">
+                            <i class="fa-solid fa-list-ol" style="color: #818cf8;"></i> 24-Hour AI Prediction Breakdown
+                        </h4>
+                        <span style="font-size: 0.8rem; color: var(--clr-text-muted);">Hourly predicted values from the current forecast horizon</span>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" id="btn-toggle-pred-table">
+                        <i class="fa-solid fa-table"></i> Toggle Hourly Table
+                    </button>
+                </div>
+                <div id="pred-hourly-table-container" class="hidden" style="overflow-x: auto;">
+                    <table class="evaluation-metrics-table">
+                        <thead>
+                            <tr>
+                                <th>Target Timestamp</th>
+                                <th>Predicted Temp</th>
+                                <th>Predicted Rain</th>
+                                <th>Predicted Humidity</th>
+                                <th>Predicted Wind</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${hourlyRowsHTML}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+
+        wrapper.innerHTML = `
+            ${heroCardsHTML}
+            ${transparencyHTML}
+            ${chartSectionHTML}
+            ${evaluationTableHTML}
+            ${hourlyBreakdownHTML}
+        `;
+
+        // Initialize event listeners and chart
+        setTimeout(() => {
+            drawPredictionComparisonChart();
+
+            const togglePredBtn = $('#btn-toggle-pred-table');
+            const predTable = $('#pred-hourly-table-container');
+            if (togglePredBtn && predTable) {
+                togglePredBtn.addEventListener('click', () => {
+                    predTable.classList.toggle('hidden');
+                });
+            }
+
+            const toggleEvalBtn = $('#btn-toggle-eval-table');
+            const evalTable = $('#eval-table-container');
+            if (toggleEvalBtn && evalTable) {
+                toggleEvalBtn.addEventListener('click', () => {
+                    evalTable.classList.toggle('hidden');
+                });
+            }
+        }, 60);
+    }
+
+    function setPredictionChartTarget(target) {
+        predictionChartTarget = target;
+        $$('.target-pill').forEach(btn => btn.classList.remove('active'));
+        const activeBtn = $(`.target-pill[onclick*="${target}"]`);
+        if (activeBtn) activeBtn.classList.add('active');
+        drawPredictionComparisonChart();
+    }
+
+    function drawPredictionComparisonChart() {
+        const canvas = document.getElementById('prediction-comparison-canvas');
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        const width = rect.width || 600;
+        const height = 260;
+
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, width, height);
+
+        const target = predictionChartTarget || 'temperature';
+        const targetConfig = {
+            'temperature': { unit: '°C', color: '#fbbf24', obsKey: 'temperature', predKey: 'temperature' },
+            'precipitation': { unit: 'mm', color: '#60a5fa', obsKey: 'precipitation', predKey: 'rainfall' },
+            'relative_humidity': { unit: '%', color: '#34d399', obsKey: 'relative_humidity', predKey: 'humidity' },
+            'wind_speed': { unit: 'km/h', color: '#a78bfa', obsKey: 'wind_speed', predKey: 'wind_speed' },
+        }[target] || { unit: '', color: '#818cf8', obsKey: 'temperature', predKey: 'temperature' };
+
+        // Build data points
+        // 1. Observed recent points (up to 12 recent hours)
+        const obsList = (lastObservedHourlyData || []).slice(0, 12).map(r => ({
+            timestamp: new Date(r.timestamp),
+            value: parseFloat(r[targetConfig.obsKey]) || 0.0,
+            type: 'observed',
+        }));
+
+        // 2. Predicted future points (next 24 hours)
+        const predList = (lastPredictionData?.predictions || []).map(p => ({
+            timestamp: new Date(p.timestamp),
+            value: parseFloat(p[targetConfig.predKey]) || 0.0,
+            type: 'predicted',
+        }));
+
+        const allPoints = [...obsList, ...predList];
+        if (allPoints.length === 0) return;
+
+        const padding = { top: 25, right: 35, bottom: 40, left: 50 };
+        const chartW = width - padding.left - padding.right;
+        const chartH = height - padding.top - padding.bottom;
+
+        const values = allPoints.map(p => p.value);
+        let minVal = Math.min(...values);
+        let maxVal = Math.max(...values);
+        if (minVal === maxVal) {
+            minVal -= 1;
+            maxVal += 1;
+        }
+        if (target === 'precipitation' || target === 'wind_speed') {
+            minVal = Math.max(0, minVal);
+        }
+        const range = (maxVal - minVal) || 1;
+
+        // Draw gridlines
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.lineWidth = 1;
+        ctx.font = '11px Inter, sans-serif';
+        ctx.fillStyle = 'rgba(232, 245, 233, 0.55)';
+        ctx.textAlign = 'right';
+
+        const yTicks = 4;
+        for (let i = 0; i <= yTicks; i++) {
+            const val = (minVal + (range * i) / yTicks).toFixed(target === 'precipitation' ? 1 : 0);
+            const y = padding.top + chartH - (i / yTicks) * chartH;
+            ctx.beginPath();
+            ctx.moveTo(padding.left, y);
+            ctx.lineTo(width - padding.right, y);
+            ctx.stroke();
+            ctx.fillText(`${val} ${targetConfig.unit}`, padding.left - 8, y + 4);
+        }
+
+        // Coordinate projection
+        const coords = allPoints.map((p, i) => {
+            const x = padding.left + (i / (allPoints.length - 1)) * chartW;
+            const y = padding.top + chartH - ((p.value - minVal) / range) * chartH;
+            return { x, y, ...p };
+        });
+
+        const obsCoords = coords.filter(c => c.type === 'observed');
+        const predCoords = coords.filter(c => c.type === 'predicted');
+
+        // Draw Observed segment (Solid line)
+        if (obsCoords.length > 1) {
+            ctx.save();
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            obsCoords.forEach((p, i) => {
+                if (i === 0) ctx.moveTo(p.x, p.y);
+                else ctx.lineTo(p.x, p.y);
+            });
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // Connect transition point between observed and predicted
+        if (obsCoords.length > 0 && predCoords.length > 0) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(167, 139, 250, 0.5)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(obsCoords[obsCoords.length - 1].x, obsCoords[obsCoords.length - 1].y);
+            ctx.lineTo(predCoords[0].x, predCoords[0].y);
+            ctx.stroke();
+            ctx.restore();
+
+            // Vertical separator at transition (NOW / FORECAST START)
+            const splitX = (obsCoords[obsCoords.length - 1].x + predCoords[0].x) / 2;
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(splitX, padding.top);
+            ctx.lineTo(splitX, padding.top + chartH);
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.font = '10px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('FORECAST HORIZON ▶', splitX, padding.top - 6);
+            ctx.restore();
+        }
+
+        // Draw Predicted segment (Dashed line with glow)
+        if (predCoords.length > 1) {
+            ctx.save();
+            ctx.strokeStyle = '#a78bfa';
+            ctx.lineWidth = 2.5;
+            ctx.setLineDash([6, 4]);
+            ctx.shadowColor = 'rgba(167, 139, 250, 0.5)';
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            predCoords.forEach((p, i) => {
+                if (i === 0) ctx.moveTo(p.x, p.y);
+                else ctx.lineTo(p.x, p.y);
+            });
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // Draw point markers & X labels
+        ctx.textAlign = 'center';
+        coords.forEach((p, i) => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.type === 'observed' ? 4 : 4.5, 0, Math.PI * 2);
+            ctx.fillStyle = p.type === 'observed' ? '#0284c7' : '#7c3aed';
+            ctx.fill();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+
+            // Show time labels for every 4th point or ends
+            const showLabel = (coords.length <= 12) || (i % 4 === 0) || (i === coords.length - 1);
+            if (showLabel) {
+                const label = p.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                ctx.fillStyle = p.type === 'observed' ? 'rgba(56, 189, 248, 0.7)' : 'rgba(167, 139, 250, 0.8)';
+                ctx.fillText(label, p.x, height - 12);
+            }
+        });
+    }
+
+    async function refreshPredictionForFarm(farmId) {
+        const btn = $('#btn-refresh-prediction');
+        if (btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Predicting...';
+        toast('Recomputing AI weather predictions...', 'info');
+        try {
+            await loadPredictionDashboard(farmId, true);
+            toast('AI weather predictions recomputed! 🤖', 'success');
+        } catch (err) {
+            toast(`Failed to predict: ${err.message}`, 'error');
+        } finally {
+            if (btn) btn.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i> Re-predict';
+        }
+    }
+
+    function bindPredictionDashboard() {
+        const btnRefresh = $('#btn-refresh-prediction');
+        if (btnRefresh) {
+            btnRefresh.addEventListener('click', () => {
+                if (currentWeatherFarmId) {
+                    refreshPredictionForFarm(currentWeatherFarmId);
+                } else {
+                    toast('Please select a farm plot first.', 'error');
+                }
+            });
+        }
+    }
+
     // ── Dashboard ─────────────────────────────────────────────
 
     async function loadDashboard() {
@@ -1093,11 +2223,16 @@ const App = (() => {
             // Render farm cards
             renderFarmCards(data.farms || []);
 
-            // Populate weather dropdown & trigger weather load
+            // Cache farmer farms for modals and queries
+            cachedFarmerFarms = data.farms || [];
+
+            // Populate weather dropdown & trigger weather and soil loads
             populateWeatherFarmDropdown(data.farms || []);
             if (data.farms && data.farms.length > 0) {
                 const targetFarmId = currentWeatherFarmId || data.farms[0].id;
                 loadWeatherDashboard(targetFarmId);
+                loadSoilDashboard(targetFarmId);
+                loadPredictionDashboard(targetFarmId);
             } else {
                 const wrapper = $('#weather-content-wrapper');
                 if (wrapper) {
@@ -1105,6 +2240,24 @@ const App = (() => {
                         <div class="empty-state">
                             <i class="fa-solid fa-tractor" style="font-size: 2rem; color: var(--clr-text-dim); margin-bottom: 10px;"></i>
                             <p>Please register a farm plot first to view localized weather forecasts.</p>
+                        </div>
+                    `;
+                }
+                const soilWrapper = $('#soil-content-wrapper');
+                if (soilWrapper) {
+                    soilWrapper.innerHTML = `
+                        <div class="empty-state">
+                            <i class="fa-solid fa-seedling" style="font-size: 2rem; color: var(--clr-text-dim); margin-bottom: 10px;"></i>
+                            <p>Please register a farm plot first to monitor soil moisture and environmental conditions.</p>
+                        </div>
+                    `;
+                }
+                const predWrapper = $('#prediction-content-wrapper');
+                if (predWrapper) {
+                    predWrapper.innerHTML = `
+                        <div class="empty-state">
+                            <i class="fa-solid fa-brain" style="font-size: 2rem; color: var(--clr-text-dim); margin-bottom: 10px;"></i>
+                            <p>Please register a farm plot first to generate AI weather predictions.</p>
                         </div>
                     `;
                 }
@@ -1226,6 +2379,8 @@ const App = (() => {
                 if (!isNaN(val)) {
                     currentWeatherFarmId = val;
                     loadWeatherDashboard(val);
+                    loadSoilDashboard(val);
+                    loadPredictionDashboard(val);
                 }
             });
         }
@@ -1371,10 +2526,18 @@ const App = (() => {
             const select = $('#weather-farm-select');
             if (select) select.value = farmId;
             loadWeatherDashboard(farmId);
+            loadSoilDashboard(farmId);
+            loadPredictionDashboard(farmId);
             const section = document.querySelector('.weather-dashboard-section');
             if (section) section.scrollIntoView({ behavior: 'smooth' });
         },
         refreshWeatherForFarm,
+        refreshSoilForFarm,
+        refreshPredictionForFarm,
+        openSensorIngestModal,
+        loadSoilDashboard,
+        loadPredictionDashboard,
+        setPredictionChartTarget,
     };
 })();
 

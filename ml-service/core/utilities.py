@@ -92,7 +92,7 @@ class MapboxService:
     )
 
     def __init__(self):
-        self.access_token: str = settings.MAPBOX_ACCESS_TOKEN
+        self.access_token: str = getattr(settings, 'MAPBOX_ACCESS_TOKEN', '')
         self.timeout: int = getattr(settings, 'MAPBOX_REQUEST_TIMEOUT', 10)
 
     # ------------------------------------------------------------------

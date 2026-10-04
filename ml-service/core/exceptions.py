@@ -10,6 +10,7 @@ Response format:
         "details": "<message or dict of field errors>"
     }
 """
+from django.core.exceptions import ObjectDoesNotExist
 from rest_framework.views import exception_handler
 from rest_framework.response import Response
 from rest_framework import status
@@ -95,6 +96,15 @@ def custom_exception_handler(exc, context):
         return Response(
             {'error': 'Geocoding service error', 'details': str(exc)},
             status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    if isinstance(exc, ObjectDoesNotExist):
+        return Response(
+            {
+                'error': 'Not Found',
+                'details': str(exc) or 'The requested resource was not found.',
+            },
+            status=status.HTTP_404_NOT_FOUND,
         )
 
     # Unknown exception — return None so Django's 500 handler takes over.
